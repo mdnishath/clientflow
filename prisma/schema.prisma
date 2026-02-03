@@ -1,0 +1,317 @@
+// Prisma schema for ClientFlow - GMB Review Manager
+// Designed for local PostgreSQL with Supabase compatibility
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+// User roles for Role-Based Access Control (RBAC)
+enum Role {
+  ADMIN   // Full system access - can manage users, reviews, and all settings
+  CLIENT  // Limited access - can manage own reviews and data only
+}
+
+// Review statuses for GMB review tracking
+enum ReviewStatus {
+  PENDING       // নতুন, কাজ শুরু হয়নি
+  IN_PROGRESS   // কাজ চলছে
+  MISSING       // Review আসেনি
+  APPLIED       // Apply করা হয়েছে
+  GOOGLE_ISSUE  // Google platform সমস্যা
+  LIVE          // Review live হয়ে গেছে
+  DONE          // সম্পন্ন
+}
+
+// ============================================
+// MODELS
+// ============================================
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  role         Role     @default(CLIENT)
+  
+  // For CLIENT role: link to their client entity (data isolation)
+  clientId     String?  @unique @map("client_id")
+  
+  // Admin-controlled permissions for CLIENT users
+  canDelete    Boolean  @default(false) @map("can_delete") // Can this client delete data?
+  
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  ownedClients     Client[]  @relation("AdminClients") // Clients created by admin
+  linkedClient     Client?   @relation("ClientAccount", fields: [clientId], references: [id])
+  tags             Tag[]
+  reviews          Review[]
+  reviewTemplates  ReviewTemplate[]
+  reviewContexts   ReviewContext[]
+  notifications    Notification[]
+  categories       Category[]
+
+  @@index([clientId])
+  @@map("users")
+}
+
+// Client = The Person or Agency (e.g., Alex, Leo) - Your customer
+model Client {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id") // Admin who created/manages this client
+  name         String   // Client Name (e.g. Alex)
+  email        String?
+  phone        String?
+  notes        String?
+  isArchived   Boolean  @default(false) @map("is_archived")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  adminUser    User         @relation("AdminClients", fields: [userId], references: [id], onDelete: Cascade)
+  userAccount  User?        @relation("ClientAccount") // Client's own login account (optional)
+  gmbProfiles  GmbProfile[]
+
+  @@index([userId])
+  @@index([isArchived])
+  @@map("clients")
+}
+
+// GmbProfile = A specific Google Business Profile (e.g. Alex's Pizza Shop 1)
+model GmbProfile {
+  id           String   @id @default(cuid())
+  clientId     String   @map("client_id")
+  businessName String   @map("business_name")
+  gmbLink      String?  @map("gmb_link")
+  category     String?  // GMB category for AI context
+  isArchived   Boolean  @default(false) @map("is_archived")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  reviews   Review[]
+
+  @@index([clientId])
+  @@index([category])
+  @@index([isArchived])
+  @@map("gmb_profiles")
+}
+
+// Review = Primary entity for GMB review management
+model Review {
+  id             String       @id @default(cuid())
+  userId         String       @map("user_id")
+  profileId      String       @map("profile_id")
+  reviewText     String?      @map("review_text")
+  reviewLiveLink String?      @map("review_live_link")
+  emailUsed      String?      @map("email_used") // Email used to post the review
+  status         ReviewStatus @default(PENDING)
+  dueDate        DateTime?    @map("due_date")
+  completedAt    DateTime?    @map("completed_at")
+  notes          String?
+  isArchived     Boolean      @default(false) @map("is_archived")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  // Live Check Automation Fields
+  lastCheckedAt  DateTime?    @map("last_checked_at")
+  checkStatus    String?      @map("check_status") // "LIVE", "MISSING", "ERROR", "CHECKING"
+  screenshotPath String?      @map("screenshot_path")
+
+  // Relations
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile    GmbProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  reviewTags ReviewTag[]
+
+  // Performance indexes
+  @@index([userId])
+  @@index([profileId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([isArchived])
+  @@index([userId, status, isArchived])
+  @@index([profileId, status, isArchived])
+  @@index([checkStatus])
+  @@map("reviews")
+}
+
+model Tag {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  name   String
+  color  String @default("#6366f1")
+
+  // Relations
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewTags ReviewTag[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("tags")
+}
+
+model ReviewTag {
+  reviewId String @map("review_id")
+  tagId    String @map("tag_id")
+
+  // Relations
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([reviewId, tagId])
+  @@map("review_tags")
+}
+
+// ============================================
+// AI TEMPLATE SYSTEM
+// ============================================
+
+// ReviewTemplate = Reusable prompt templates for AI review generation
+model ReviewTemplate {
+  id                String   @id @default(cuid())
+  userId            String   @map("user_id")
+
+  // Basic Info
+  name              String   // "Quick Praise", "Story Style"
+  lines             Int      @default(2) // 1, 2, or 3
+
+  // Prompt Engineering
+  promptInstruction String   @db.Text @map("prompt_instruction")
+  exampleOutput     String?  @db.Text @map("example_output")
+
+  // Business Name Handling
+  namePosition      String   @default("none") @map("name_position") // none, start, middle, end
+
+  // Categorization
+  category          String?  // "short", "detailed", "casual", "professional"
+  tags              String[] @default([])
+
+  // Quality Control
+  usageCount        Int      @default(0) @map("usage_count")
+  successRate       Float?   @map("success_rate") // Track which templates work best
+  isActive          Boolean  @default(true) @map("is_active")
+
+  // Metadata
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([category])
+  @@map("review_templates")
+}
+
+// ReviewContext = Personas and Scenarios for AI context
+model ReviewContext {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+
+  // Type
+  type        String   // "persona" or "scenario"
+
+  // Content
+  title       String   // "Busy Mom", "First Time Visitor"
+  content     String   @db.Text // The actual context text
+  tone        String?  // "friendly", "professional", "casual"
+
+  // Categorization
+  category    String?  // "RESTAURANT", "SERVICE", "RETAIL", "GENERAL"
+  tags        String[] @default([])
+
+  // Control
+  isActive    Boolean  @default(true) @map("is_active")
+  usageCount  Int      @default(0) @map("usage_count")
+
+  // Metadata
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([isActive])
+  @@index([category])
+  @@map("review_contexts")
+}
+
+// Notification - Database-backed notification system
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+
+  // Content
+  title     String
+  message   String
+  type      String   @default("info") // "info", "success", "warning", "error"
+
+  // Status
+  isRead    Boolean  @default(false) @map("is_read")
+
+  // Link (optional - clicking notification can navigate somewhere)
+  link      String?
+
+  // Metadata
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// CATEGORY MANAGEMENT
+// ============================================
+
+// Category = Dynamic business categories for templates/contexts
+model Category {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+
+  // Basic Info
+  name        String   // Display name (e.g., "Roofing Contractor")
+  slug        String   // URL-safe identifier (e.g., "ROOFING_CONTRACTOR")
+  description String?  @db.Text
+
+  // UI Customization
+  icon        String?  // Emoji or icon name
+  color       String?  // Hex color for UI
+
+  // Control
+  isSystem    Boolean  @default(false) @map("is_system") // System categories can't be deleted
+  isActive    Boolean  @default(true) @map("is_active")
+  isArchived  Boolean  @default(false) @map("is_archived")
+  sortOrder   Int      @default(0) @map("sort_order")
+
+  // Metadata
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, slug])
+  @@index([userId])
+  @@index([isActive])
+  @@index([isArchived])
+  @@map("categories")
+}

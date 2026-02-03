@@ -1,0 +1,398 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+const USER_EMAIL = "demo@clientflow.local";
+
+// Templates: 30 x 1-line, 40 x 2-line, 30 x 3-line = 100 total
+const TEMPLATES_1LINE = [
+    "Intervention rapide et efficace, serrurier très professionnel !",
+    "Porte ouverte en quelques minutes sans dégât, parfait.",
+    "Serrurier compétent et honnête, je recommande vivement.",
+    "Dépannage urgent parfaitement géré, merci beaucoup !",
+    "Travail propre et prix raisonnables, très satisfait.",
+    "Changement de serrure impeccable, sécurité renforcée.",
+    "Je recommande {business_name} sans hésitation !",
+    "Intervention nocturne rapide, super service client.",
+    "Serrurier sérieux et travail de qualité, satisfait.",
+    "Ouverture de porte claquée très rapide, merci !",
+    "Installation blindée parfaite, très content.",
+    "Reproduction de clés rapide et précise, excellent.",
+    "Devis clair et respecté, travail impeccable.",
+    "Serrurier à l'écoute et très compétent.",
+    "Problème de serrure résolu rapidement, professionnel.",
+    "Excellent rapport qualité-prix pour les travaux.",
+    "Intervention en urgence très appréciée, merci.",
+    "Travaux de serrurerie parfaitement réalisés.",
+    "Artisan qualifié et respectueux, je recommande.",
+    "Dépannage rapide et efficace, super service !",
+    "Installation cylindre haute sécurité impeccable.",
+    "Serrurier disponible et réactif, excellent travail.",
+    "Blindage porte d'entrée parfait, merci !",
+    "Chantier propre et travail soigné, bravo.",
+    "Service client au top, travail de qualité.",
+    "Pose de verrou rapide et propre, parfait.",
+    "Diagnostic panne serrure précis et réparation efficace.",
+    "Serrurier honnête et travail sérieux, recommandé.",
+    "Installation serrure connectée parfaite, ravi !",
+    "Remplacement barillet cassé efficace et rapide.",
+];
+
+const TEMPLATES_2LINE = [
+    "Intervention très rapide pour une porte claquée en pleine nuit. Le serrurier a ouvert sans abîmer la porte et le tarif était correct.",
+    "Installation complète d'une porte blindée réalisée avec soin. Travail de qualité et respect des délais, je suis très satisfait.",
+    "J'ai fait appel à {business_name} pour un dépannage urgent après un cambriolage. Intervention rapide et sécurisation immédiate, merci.",
+    "Remplacement du cylindre de ma serrure effectué rapidement et proprement. Le serrurier a tout expliqué clairement et le prix était honnête.",
+    "Ouverture de porte après perte de clés réalisée efficacement sans dégât. Le problème est résolu et le serrurier a été très professionnel.",
+    "Installation d'une serrure multipoints haute sécurité parfaite. Je me sens maintenant beaucoup plus en sécurité chez moi.",
+    "Réparation d'une serrure bloquée qui m'empêchait de rentrer chez moi. Intervention rapide qui m'a évité de dormir dehors, merci beaucoup.",
+    "Pose d'une cornière anti-pince sur ma porte d'entrée. Travail soigné et finitions impeccables, très content du résultat.",
+    "Reproduction de clés spéciales pour ma copropriété très rapide. Le serrurier avait le matériel adapté et les clés fonctionnent parfaitement.",
+    "Mise en sécurité après tentative d'effraction parfaitement gérée. Le serrurier a renforcé tous les points faibles de ma porte.",
+    "Installation d'un verrou de sûreté supplémentaire bien réalisée. Le travail est propre et discret, exactement ce que je voulais.",
+    "Dépannage week-end pour serrure cassée effectué rapidement. Le serrurier était disponible et a résolu le problème efficacement.",
+    "Pose d'un judas numérique moderne avec écran intérieur. Installation technique bien maîtrisée et résultat très pratique.",
+    "Remplacement complet de la serrurerie d'un appartement ancien. Mise aux normes effectuée proprement et dans les temps.",
+    "Je recommande {business_name} pour leur sérieux et leur compétence. Installation de qualité et service client irréprochable.",
+    "Intervention pour porte blindée bloquée gérée avec expertise. Le serrurier connaissait parfaitement ce type de serrure complexe.",
+    "Installation d'un système de contrôle d'accès pour mon commerce. Projet technique réalisé avec expertise et conseils pertinents.",
+    "Ouverture de coffre-fort ancien très bien gérée. Le serrurier a su trouver la solution sans endommager le mécanisme.",
+    "Changement de toutes les serrures après déménagement effectué rapidement. Sécurité totale maintenant dans mon nouveau logement.",
+    "Réparation de gâche électrique d'immeuble parfaitement réalisée. L'interphone fonctionne de nouveau correctement.",
+    "Installation d'une serrure à code pour ma résidence secondaire. Plus besoin de clés et accès facilité pour les locataires.",
+    "Remplacement de serrure forcée après effraction très rapide. Le serrurier a tout sécurisé le soir même du cambriolage.",
+    "Pose de protection de cylindre anti-casse efficace. Investissement sécurité qui me rassure au quotidien maintenant.",
+    "Installation complète porte de garage sécurisée. Travail de professionnel, mécanisme robuste et fiable.",
+    "Déblocage de volet roulant avec serrure réalisé rapidement. Le serrurier avait le matériel adapté à cette intervention.",
+    "Création de passe-partout pour mon immeuble locatif. Solution pratique parfaitement réalisée par un pro.",
+    "Pose d'une serrure biométrique dernière génération. Technologie de pointe installée proprement et fonctionnelle.",
+    "Réparation mécanisme de porte de cave cassé. Intervention rapide et prix très correct pour la prestation.",
+    "Installation d'un entrebâilleur de sécurité discret. Petit équipement bien posé qui apporte une sécurité supplémentaire.",
+    "Je fais appel à {business_name} depuis des années. Toujours satisfait de leur réactivité et de leur honnêteté.",
+    "Pose de serrure trois points certifiée A2P. Assurance rassurée et sécurité renforcée pour ma famille.",
+    "Ouverture de boîte aux lettres bloquée très rapide. Le serrurier avait les outils adaptés malgré le modèle ancien.",
+    "Installation de barre de seuil anti-effraction. Protection supplémentaire discrète et efficace maintenant.",
+    "Changement de canon de serrure haute sécurité. Clés protégées et reproduction impossible sans carte propriétaire.",
+    "Installation motorisation de portail avec digicode. Système complet et fonctionnel posé par un vrai pro.",
+    "Réparation de serrure de boîtier électrique. Intervention technique bien maîtrisée, accès sécurisé rétabli.",
+    "Pose de vitrage anti-effraction sur porte vitrée. Sécurité améliorée sans modifier l'esthétique de l'entrée.",
+    "Création double de clé voiture ancienne. Le serrurier avait le matériel pour les véhicules de collection.",
+    "Installation de serrure anti-panique pour local ERP. Mise aux normes sécurité incendie parfaitement réalisée.",
+    "Dépannage clé cassée dans la serrure très bien géré. Extraction délicate réussie sans dommage au cylindre.",
+];
+
+const TEMPLATES_3LINE = [
+    "Nous avons fait appel à ce serrurier pour le blindage complet de notre porte d'entrée et nous sommes enchantés du résultat. Le travail est impeccable avec une finition parfaite et une serrure haute sécurité. L'équipe est ponctuelle, propre et très professionnelle.",
+    "Suite à un cambriolage traumatisant ma famille, le serrurier est intervenu en urgence le soir même pour tout sécuriser. Il a su nous rassurer et a effectué une mise en sécurité complète avec porte blindée et serrures renforcées. Service remarquable.",
+    "J'ai fait installer un système de contrôle d'accès complet par {business_name} pour mon entreprise et je suis extrêmement satisfait. De l'étude technique à la mise en service et formation, tout a été géré parfaitement. Sécurité optimale maintenant.",
+    "Mise en sécurité complète de notre maison après plusieurs cambriolages dans le quartier. Le serrurier a analysé tous les points faibles et proposé des solutions adaptées à notre budget. Nous dormons maintenant tranquilles.",
+    "Installation de serrures connectées sur toutes les portes de notre Airbnb avec gestion à distance des accès. Solution parfaite pour les locations courte durée. Le serrurier maîtrisait parfaitement cette technologie moderne.",
+    "Suite à la perte de mon trousseau complet, le serrurier a changé toutes les serrures de mon appartement en une demi-journée. Travail rapide et efficace qui m'a permis de retrouver ma tranquillité d'esprit rapidement.",
+    "Nous avons confié à ce serrurier la sécurisation complète de notre bijouterie avec portes blindées et coffre-fort certifié. De la conception à la réalisation, tout a été parfait. Notre assurance a validé l'installation.",
+    "Installation d'un système de vidéosurveillance couplé avec le contrôle d'accès pour notre résidence collective. Travail technique complexe réalisé avec expertise. Tous les copropriétaires sont satisfaits du résultat.",
+    "Remplacement de toutes les serrures de notre immeuble de bureaux pour passer en clé passe-partout hiérarchisé. Organisation logistique parfaite pour ne pas perturber l'activité. Installation conforme à nos besoins.",
+    "Je recommande vivement {business_name} pour leur professionnalisme et leur expertise en serrurerie de sécurité. Ils ont transformé ma porte standard en véritable coffre-fort sans la remplacer. Travail remarquable.",
+    "Installation complète d'une chambre forte dans notre entreprise pour sécuriser les documents confidentiels et valeurs. Le serrurier a su adapter les solutions aux contraintes du bâtiment existant. Sécurité maximale.",
+    "Intervention d'urgence un dimanche soir alors que j'étais enfermé dehors avec mon bébé. Le serrurier est arrivé très rapidement et a ouvert sans dégât. Prix correct malgré l'urgence, très reconnaissant.",
+    "Création d'un local sécurisé pour les armes de chasse de mon père avec toutes les normes réglementaires. Le serrurier connaissait parfaitement la législation et a fourni le certificat de conformité. Parfait.",
+    "Suite à une inspection révélant des serrures non conformes dans notre ERP, le serrurier a réalisé une mise aux normes complète. Barres anti-panique et issues de secours conformes maintenant. Audit validé.",
+    "Installation de serrures de haute sécurité après plusieurs tentatives d'intrusion sur notre local commercial. Le serrurier a dissuadé par avance toute nouvelle tentative. Investissement rentabilisé en tranquillité.",
+    "Pose d'une porte de cave blindée pour protéger mes grands crus et ma collection de vins. Solution sur mesure parfaitement réalisée. Température stable et sécurité optimale maintenant.",
+    "Mise en sécurité complète d'une pharmacie avec coffre pour stupéfiants et accès contrôlé au stock. Installation conforme aux exigences de l'ARS. Ouverture du commerce sans difficulté grâce au serrurier.",
+    "Intervention suite à une effraction violente sur ma porte d'entrée au bélier. Le serrurier a remplacé la porte et installé un système résistant aux attaques. Plus jamais ça maintenant.",
+    "Installation d'organigramme de clés pour notre chaîne d'hôtels avec formation du personnel à la gestion. Solution centralisée efficace parfaitement mise en place. Gestion des accès simplifiée.",
+    "Changement de toutes les serrures d'une maison de retraite pour passer en clés ergonomiques pour seniors. Le serrurier a su adapter les solutions aux résidents à mobilité réduite. Très bien pensé.",
+    "Nous avons fait appel à {business_name} pour sécuriser notre data center avec contrôle d'accès biométrique multi-niveaux. Installation critique parfaitement réalisée. Nos clients sont rassurés sur la sécurité.",
+    "Ouverture d'un coffre-fort ancien dont la combinaison était perdue depuis le décès du propriétaire. Le serrurier a su l'ouvrir sans le détruire et nous avons récupéré les souvenirs de famille.",
+    "Installation d'un système de verrouillage automatique sur toutes les portes de notre clinique vétérinaire. Sécurité des animaux et des produits assurée. Système fiable et pratique au quotidien.",
+    "Dépannage d'une porte blindée de haute sécurité restée bloquée suite à une panne électrique. Le serrurier a su débloquer le système et installer un bypass mécanique de secours.",
+    "Création d'une salle des coffres pour notre étude notariale avec tous les systèmes de sécurité requis. Installation aux normes professionnelles parfaitement réalisée et certifiée. Client rassuré.",
+    "Mise en sécurité d'un musée avec serrures historiques à préserver et systèmes modernes à intégrer discrètement. Le serrurier a su marier esthétique patrimoniale et sécurité contemporaine. Remarquable.",
+    "Installation de contrôle d'accès flexible pour notre espace de coworking avec badges temporaires et permanents. Gestion simplifiée des membres et sécurité des espaces privés. Solution parfaitement adaptée.",
+    "Pose d'une porte de panic room dans notre résidence suite à des menaces. Installation discrète et résistante réalisée par un professionnel de la sécurité. Refuge familial maintenant disponible.",
+    "Ouverture et reprogrammation d'un coffre électronique d'hôtel bloqué avec objets de valeur d'un client à l'intérieur. Intervention délicate parfaitement gérée par le serrurier. Client satisfait.",
+    "Sécurisation complète d'une ambassade avec serrures diplomatiques et systèmes anti-intrusion certifiés. Niveau de sécurité étatique parfaitement atteint grâce à ce serrurier spécialisé.",
+];
+
+// 200 contexts
+const CONTEXTS = [
+    "Porte claquée clés à l'intérieur",
+    "Ouverture porte blindée bloquée",
+    "Changement serrure après cambriolage",
+    "Installation porte blindée",
+    "Remplacement cylindre haute sécurité",
+    "Reproduction clés sécurisées",
+    "Réparation serrure cassée",
+    "Pose verrou de sûreté",
+    "Installation serrure multipoints",
+    "Dépannage urgent nuit",
+    "Ouverture coffre-fort oublié",
+    "Blindage porte existante",
+    "Installation judas numérique",
+    "Changement barillet porte",
+    "Pose cornière anti-pince",
+    "Installation serrure connectée",
+    "Réparation gâche électrique",
+    "Création passe-partout immeuble",
+    "Installation serrure à code",
+    "Remplacement serrure forcée",
+    "Pose protection cylindre",
+    "Installation serrure biométrique",
+    "Ouverture boîte aux lettres",
+    "Pose barre de seuil",
+    "Déblocage volet roulant",
+    "Installation contrôle accès",
+    "Changement serrure garage",
+    "Pose serrure anti-panique",
+    "Extraction clé cassée",
+    "Installation motorisation portail",
+    "Ouverture voiture clés perdues",
+    "Remplacement serrure meuble",
+    "Pose serrure trois points",
+    "Installation digicode entrée",
+    "Changement canon serrure",
+    "Réparation porte cave",
+    "Installation interphone vidéo",
+    "Pose vitrage anti-effraction",
+    "Création double clé",
+    "Mise aux normes sécurité",
+    "Clés enfermées dans l'appartement",
+    "Serrure bloquée qui ne tourne plus",
+    "Porte blindée qui ne s'ouvre plus",
+    "Cambriolage tentative effraction",
+    "Perte totale du trousseau",
+    "Clé cassée dans serrure",
+    "Serrure gelée hiver",
+    "Porte qui ne ferme plus",
+    "Cylindre qui tourne dans le vide",
+    "Barillet arraché tentative vol",
+    "Voisin a gardé clés après départ",
+    "Ex-conjoint a les clés",
+    "Location termine récupérer clés",
+    "Copie clé non autorisée",
+    "Enfant enfermé dans chambre",
+    "Personne âgée ne peut sortir",
+    "Accès urgence pompiers",
+    "Porte claquée avec four allumé",
+    "Animal enfermé seul urgence",
+    "Réunion importante clés oubliées",
+    "Devis blindage porte entrée",
+    "Devis serrure haute sécurité",
+    "Devis changement toutes serrures",
+    "Devis installation coffre-fort",
+    "Devis contrôle accès entreprise",
+    "Devis sécurisation commerce",
+    "Devis porte blindée appartement",
+    "Devis serrure certifiée A2P",
+    "Devis installation digicode",
+    "Devis mise aux normes ERP",
+    "Serrurier pour syndic copropriété",
+    "Serrurier agréé assurance",
+    "Contrat maintenance serrurerie",
+    "Intervention pour bailleur",
+    "Serrurier disponible dimanche",
+    "Urgence serrurerie nuit",
+    "Dépannage serrurier férié",
+    "Serrurier proche rapidement",
+    "Artisan serrurier honnête",
+    "Serrurier pas cher fiable",
+    "Installation serrure A2P une étoile",
+    "Serrure A2P deux étoiles",
+    "Serrure A2P trois étoiles",
+    "Cylindre européen haute sécurité",
+    "Serrure à larder multipoints",
+    "Serrure en applique renfort",
+    "Serrure carénée esthétique",
+    "Crémone de fenêtre sécurisée",
+    "Verrou à bouton intérieur",
+    "Chaîne de sécurité porte",
+    "Entrebâilleur métallique",
+    "Bloc porte blindé complet",
+    "Pivot de sol porte lourde",
+    "Ferme-porte automatique",
+    "Barre de pivot anti-dégondage",
+    "Serrure porte coulissante",
+    "Serrure de portillon jardin",
+    "Cadenas haute sécurité",
+    "Antivol de porte véhicule",
+    "Bloque pédale voiture",
+    "Sécurisation commerce nuit",
+    "Rideau métallique serrure",
+    "Grille de défense fenêtre",
+    "Barreaudage de sécurité",
+    "Volet roulant anti-effraction",
+    "Porte de service renforcée",
+    "Issue de secours normée",
+    "Local technique sécurisé",
+    "Armoire forte bureau",
+    "Coffre-fort mural encastré",
+    "Coffre ignifuge documents",
+    "Chambre forte construction",
+    "Salle des coffres bancaire",
+    "Vitrine sécurisée bijouterie",
+    "Présentoir vitré fermant",
+    "Tiroir-caisse sécurisé",
+    "Armoire à clés sécurisée",
+    "Boîte à clés à code",
+    "Installation badge RFID",
+    "Lecteur biométrique empreinte",
+    "Reconnaissance faciale accès",
+    "Clavier à code lumineux",
+    "Cylindre électronique programmable",
+    "Serrure connectée smartphone",
+    "Gestion accès cloud",
+    "Historique passages enregistré",
+    "Alertes intrusion temps réel",
+    "Caméra porte connectée",
+    "Résidence principale sécurisée",
+    "Appartement locatif serrures",
+    "Maison secondaire accès",
+    "Cave à vin protection",
+    "Garage voiture sécurité",
+    "Abri de jardin cadenas",
+    "Portail motorisé sécurisé",
+    "Baie vitrée verrouillage",
+    "Fenêtre de toit serrure",
+    "Trappe grenier fermant",
+    "Bureaux entreprise accès",
+    "Entrepôt logistique sécurisé",
+    "Usine contrôle entrée",
+    "Commerce boutique alarme",
+    "Restaurant cuisine fermée",
+    "Hôtel chambres magnétiques",
+    "Clinique zones sensibles",
+    "Laboratoire accès restreint",
+    "Data center haute sécurité",
+    "Salle serveur protection",
+    "Pharmacie stupéfiants coffre",
+    "Bijouterie vitrine sécurisée",
+    "Banque porte blindée",
+    "Notaire documents coffre",
+    "Cabinet médecin dossiers",
+    "Avocat archives sécurisées",
+    "Expert-comptable stockage",
+    "Mairie archives accès",
+    "Musée oeuvres protection",
+    "Galerie art sécurité",
+    "Intervention rapide urgence",
+    "Ouverture sans dégât",
+    "Réparation sur place",
+    "Remplacement immédiat",
+    "Devis gratuit express",
+    "Tarif transparent affiché",
+    "Garantie travaux réalisés",
+    "Matériel certifié qualité",
+    "Serrurier agréé assurances",
+    "Attestation pour déclaration",
+    "Facture détaillée fournie",
+    "Conseils prévention gratuits",
+    "Diagnostic sécurité offert",
+    "Étude personnalisée besoin",
+    "Forfait maintenance annuel",
+    "SAV réactif disponible",
+    "Formation utilisation système",
+    "Documentation technique remise",
+    "Certificat conformité délivré",
+    "Assurance responsabilité civile",
+    "Clé perdue urgence absolue",
+    "Enfermé dehors avec bébé",
+    "Porte bloquée rdv important",
+    "Serrure cassée soir Noël",
+    "Cambriolage en cours appel",
+    "Effraction découverte matin",
+    "Porte forcée police partie",
+    "Coffre bloqué code oublié",
+    "Clé magnétique démagnétisée",
+    "Badge perdu accès interdit",
+    "Digicode en panne immeuble",
+    "Interphone HS porte fermée",
+    "Portail motorisé en panne",
+    "Volet bloqué fenêtre fermée",
+    "Rideau métal coincé commerce",
+];
+
+async function seed() {
+    console.log("🔐 Seeding Locksmith data...\n");
+
+    const user = await prisma.user.findFirst({ where: { email: USER_EMAIL } });
+    if (!user) {
+        console.error(`❌ User ${USER_EMAIL} not found!`);
+        return;
+    }
+    console.log(`✓ Found user: ${user.email}\n`);
+
+    // Insert 1-line templates
+    console.log("📝 Creating 1-line templates...");
+    for (let i = 0; i < TEMPLATES_1LINE.length; i++) {
+        await prisma.reviewTemplate.create({
+            data: {
+                userId: user.id,
+                name: `Locksmith 1L-${i + 1}`,
+                lines: 1,
+                category: "LOCKSMITH",
+                promptInstruction: TEMPLATES_1LINE[i],
+                namePosition: TEMPLATES_1LINE[i].includes("{business_name}") ? "middle" : "none",
+                isActive: true,
+            }
+        });
+    }
+    console.log(`   ✓ ${TEMPLATES_1LINE.length} x 1-line templates`);
+
+    // Insert 2-line templates
+    console.log("📝 Creating 2-line templates...");
+    for (let i = 0; i < TEMPLATES_2LINE.length; i++) {
+        await prisma.reviewTemplate.create({
+            data: {
+                userId: user.id,
+                name: `Locksmith 2L-${i + 1}`,
+                lines: 2,
+                category: "LOCKSMITH",
+                promptInstruction: TEMPLATES_2LINE[i],
+                namePosition: TEMPLATES_2LINE[i].includes("{business_name}") ? "middle" : "none",
+                isActive: true,
+            }
+        });
+    }
+    console.log(`   ✓ ${TEMPLATES_2LINE.length} x 2-line templates`);
+
+    // Insert 3-line templates
+    console.log("📝 Creating 3-line templates...");
+    for (let i = 0; i < TEMPLATES_3LINE.length; i++) {
+        await prisma.reviewTemplate.create({
+            data: {
+                userId: user.id,
+                name: `Locksmith 3L-${i + 1}`,
+                lines: 3,
+                category: "LOCKSMITH",
+                promptInstruction: TEMPLATES_3LINE[i],
+                namePosition: TEMPLATES_3LINE[i].includes("{business_name}") ? "middle" : "none",
+                isActive: true,
+            }
+        });
+    }
+    console.log(`   ✓ ${TEMPLATES_3LINE.length} x 3-line templates`);
+
+    // Insert contexts
+    console.log("\n💬 Creating contexts...");
+    for (let i = 0; i < CONTEXTS.length; i++) {
+        await prisma.reviewContext.create({
+            data: {
+                userId: user.id,
+                type: "scenario",
+                title: `Locksmith Context ${i + 1}`,
+                content: CONTEXTS[i],
+                category: "LOCKSMITH",
+                isActive: true,
+            }
+        });
+        if ((i + 1) % 50 === 0) console.log(`   ...${i + 1} contexts`);
+    }
+    console.log(`   ✓ ${CONTEXTS.length} contexts`);
+
+    const total = TEMPLATES_1LINE.length + TEMPLATES_2LINE.length + TEMPLATES_3LINE.length;
+    console.log(`\n✅ Complete! ${total} templates + ${CONTEXTS.length} contexts for LOCKSMITH`);
+}
+
+seed()
+    .catch((e) => { console.error("❌ Error:", e); process.exit(1); })
+    .finally(async () => { await prisma.$disconnect(); });

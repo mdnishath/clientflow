@@ -1,0 +1,9 @@
+# Live Check Feature - Screenshots
+# Add these lines to your main .gitignore file
+
+# Screenshot storage (generated at runtime)
+public/screenshots/*.png
+public/screenshots/*.jpg
+
+# Keep the directory structure
+!public/screenshots/.gitkeep

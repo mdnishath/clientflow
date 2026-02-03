@@ -1,0 +1,89 @@
+# Category & Profile Management Improvements
+
+## Changes Required
+
+### 1. Category Page Fixes
+- [x] Fix "Show Archived" toggle to show ONLY archived when enabled
+- [x] Add multi-select with checkboxes
+- [x] Add bulk archive/delete actions
+- [x] All actions should trigger notifications (already working)
+
+---
+
+### 2. New GMB Profiles Page
+Created standalone `/admin/profiles/page.tsx` with:
+
+- [x] List all GMB profiles (from all clients)
+- [x] Filters:
+  - Category dropdown
+  - Client dropdown
+  - Search by name
+- [x] Pagination
+- [x] Single delete with confirmation
+- [x] Multi-select archive/delete
+- [x] All actions trigger notifications
+
+---
+
+### 3. API Changes
+
+#### [DONE] `/api/profiles/bulk/route.ts`
+- POST for bulk archive/restore
+- DELETE for bulk delete
+
+---
+
+### 4. Client Detail Page Enhancement
+Added to `/clients/[id]/page.tsx`:
+
+- [x] Search filter for profiles
+- [x] Category filter dropdown
+- [x] Show archived toggle
+- [x] Pagination
+- [x] Multi-select with checkboxes
+- [x] Bulk archive/restore/delete actions
+- [x] Individual profile dropdown menu actions
+- [x] Stats cards
+
+---
+
+### 5. Task System Removal (COMPLETED)
+
+Removed all task-related code:
+
+- [x] Deleted `/tasks` page and loading.tsx
+- [x] Deleted `/api/tasks` routes
+- [x] Deleted `/components/tasks` folder
+- [x] Deleted `quick-add-task.tsx` component
+- [x] Removed Tasks from sidebar navigation
+- [x] Removed QuickAddTask from dashboard
+- [x] Removed Task model from Prisma schema
+- [x] Removed TaskTag model from Prisma schema
+- [x] Removed TaskStatus, Priority, TaskType enums
+
+---
+
+## Files Modified/Created
+
+| File | Status | Changes |
+|------|--------|---------|
+| `src/app/(dashboard)/admin/categories/page.tsx` | DONE | Fixed toggle, added multi-select |
+| `src/app/(dashboard)/admin/profiles/page.tsx` | NEW | Profile admin page with all features |
+| `src/app/(dashboard)/clients/[id]/page.tsx` | DONE | Full profile management with filters |
+| `src/app/api/profiles/bulk/route.ts` | NEW | Bulk archive/restore/delete |
+| `src/components/layout/sidebar.tsx` | DONE | Removed Tasks, added Profiles link |
+| `src/app/(dashboard)/page.tsx` | DONE | Removed QuickAddTask |
+| `prisma/schema.prisma` | DONE | Removed Task system |
+
+---
+
+## Next Steps
+
+1. Run `npx prisma migrate dev --name remove_tasks` to apply schema changes
+2. Run `npx prisma generate` to regenerate client
+3. Test all features
+4. See `docs/improvements.md` for future enhancement ideas
+
+---
+
+*Completed: February 2026*

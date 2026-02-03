@@ -1,0 +1,83 @@
+# Implementation Plan - Live Review Check Feature
+
+The goal is to implement a "Live Check" feature that automatically verifies if Google Reviews are live and visible using a headless browser automation system.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Playwright Dependency**: This feature requires adding `playwright` to your project constraints. It will download browser binaries (~100MB+).
+> **Queue System**: For this version, we will implement an **in-memory queue** which works perfectly when running with `npm run dev` or a single server instance. If you deploy to a serverless environment (like Vercel output), long-running tasks (>10s) will fail.
+> **Confirm**: Are you hosting this on a VPS/Local machine (Node.js) or Vercel Serverless? (Assuming Local/VPS based on your request logic).
+
+## Proposed Changes
+
+### 1. Database Schema Updates
+We need to store the live check results and history.
+
+#### [MODIFY] [schema.prisma](file:///e:/personal-task-manager/prisma/schema.prisma)
+- Update `Review` model to include:
+  - `lastCheckedAt`: DateTime
+  - `checkStatus`: String (or Enum `LiveStatus`)
+  - `screenshotPath`: String?
+- (Optional) Create `ReviewCheckLog` for historical data if strict history is needed.
+
+```prisma
+model Review {
+  // ... existing fields ...
+  lastCheckedAt  DateTime?       @map("last_checked_at")
+  checkStatus    String?         @map("check_status") // "LIVE", "MISSING", "ERROR"
+  screenshotPath String?         @map("screenshot_path")
+}
+```
+
+### 2. Backend Automation Engine
+We will create a dedicated service to handle the Playwright automation logic.
+
+#### [NEW] [live-checker.ts](file:///e:/personal-task-manager/src/lib/automation/live-checker.ts)
+- Implement `AutomationService` class.
+- **Queue Logic**: Simple concurrency limited queue (limit to 3 threads as requested).
+- **Core Function**: `checkReviewLink(review)`
+  - Launch Headless Chrome.
+  - Navigate to `reviewLiveLink`.
+  - Handle cookie consent.
+  - **Verification Logic**:
+    1. Check for `data-review-id`.
+    2. Check for generic review confirmation text.
+    3. Take screenshot if live.
+  - Update Database.
+
+#### [NEW] [route.ts](file:///e:/personal-task-manager/src/app/api/automation/start/route.ts)
+- **POST** endpoint.
+- Receives `reviewIds`.
+- Adds them to the automation queue.
+- Returns "Started" status.
+
+### 3. Frontend UI Updates
+Replace the "Generate Reviews" button with the new "Live Check" control.
+
+#### [MODIFY] [page.tsx](file:///e:/personal-task-manager/src/app/(dashboard)/reviews/page.tsx)
+- Remove "Generate Reviews" button.
+There is a "Active" tab on existing code? I need to check where to put it exactly.
+- Add `<LiveCheckButton />` component.
+  - Dropdown: "Check Selected" (if selection > 0), "Check All".
+  - Shows loading/processing state.
+- Add status indicators in the table for `lastCheckedAt` and `checkStatus`.
+
+## Verification Plan
+
+### Automated
+1.  **Unit Test**: Test the Queue logic (mocking Playwright).
+2.  **Integration Test**: Verify API updates the DB status to "PENDING/IN_PROGRESS".
+
+### Manual Verification
+1.  **Setup**: Run `npx playwright install` manually once.
+2.  **Execution**:
+    - Select 1 known live review.
+    - Click "Live Check".
+    - Watch server logs for "Browser Launch".
+    - Verify DB updates to "LIVE".
+    - Verify Screenshot is saved in `public/screenshots`.
+3.  **Failure Test**:
+    - Add a fake review link.
+    - Run Check.
+    - Verify DB updates to "MISSING".
