@@ -12,8 +12,7 @@ async function cleanDatabase() {
     console.log('  - Deleting reviews...');
     await prisma.review.deleteMany();
 
-    console.log('  - Deleting tasks...');
-    await prisma.task.deleteMany();
+
 
     console.log('  - Deleting templates...');
     await prisma.reviewTemplate.deleteMany();

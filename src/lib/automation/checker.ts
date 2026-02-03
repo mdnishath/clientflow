@@ -240,7 +240,7 @@ export class LiveChecker {
         'ago', // Common in "X days ago"
       ];
 
-      const pageContent = await page.textContent('body').catch(() => '');
+      const pageContent = (await page.textContent('body').catch(() => '')) || '';
       const foundPatterns = textPatterns.filter(pattern =>
         pageContent.toLowerCase().includes(pattern.toLowerCase())
       );
