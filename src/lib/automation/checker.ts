@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
  * Live Check Automation - Core Checker
  *
@@ -81,8 +82,9 @@ export class LiveChecker {
 
       // Set realistic user agent to avoid detection
       await page.setExtraHTTPHeaders({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
       });
 
       await page.setViewportSize({ width: 1280, height: 720 });
@@ -207,7 +209,7 @@ export class LiveChecker {
       await page.waitForTimeout(2000);
 
       // Strategy 1: Check for data-review-id attribute
-      const reviewIdElement = await page.locator('[data-review-id]').first();
+      const reviewIdElement = await page.locator("[data-review-id]").first();
       if (await reviewIdElement.isVisible({ timeout: 5000 }).catch(() => false)) {
         console.log("✓ Found review via data-review-id");
         return true;
@@ -216,11 +218,11 @@ export class LiveChecker {
       // Strategy 2: Check for Google Maps review indicators
       const reviewIndicators = [
         '[role="article"]', // Review articles
-        '.review-full-text', // Review text
+        ".review-full-text", // Review text
         'button:has-text("Local Guide")', // Local Guide badge
-        '[data-review-id]', // Review ID
-        'div.section-review', // Review section
-        'span.section-review-stars', // Star ratings
+        "[data-review-id]", // Review ID
+        "div.section-review", // Review section
+        "span.section-review-stars", // Star ratings
         'button[aria-label*="stars"]', // Star buttons
       ];
 
@@ -234,19 +236,19 @@ export class LiveChecker {
 
       // Strategy 3: Check for review text patterns in page content
       const textPatterns = [
-        'Local Guide',
-        'reviews',
-        'stars',
-        'ago', // Common in "X days ago"
+        "Local Guide",
+        "reviews",
+        "stars",
+        "ago", // Common in "X days ago"
       ];
 
-      const pageContent = (await page.textContent('body').catch(() => '')) || '';
-      const foundPatterns = textPatterns.filter(pattern =>
+      const pageContent = (await page.textContent("body").catch(() => "")) || "";
+      const foundPatterns = textPatterns.filter((pattern) =>
         pageContent.toLowerCase().includes(pattern.toLowerCase())
       );
 
       if (foundPatterns.length >= 2) {
-        console.log(`✓ Found review via text patterns: ${foundPatterns.join(', ')}`);
+        console.log(`✓ Found review via text patterns: ${foundPatterns.join(", ")}`);
         return true;
       }
 
