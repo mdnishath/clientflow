@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const profileId = searchParams.get("profileId");
     const clientId = searchParams.get("clientId");
+    const category = searchParams.get("category");
     const status = searchParams.get("status");
     const showArchived = searchParams.get("archived") === "true";
     const search = searchParams.get("search");
@@ -24,24 +25,59 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Build where clause with scope filtering
-    const where = {
+    const where: any = {
         isArchived: showArchived,
-        // ADMIN sees all, CLIENT sees only their client's data
-        ...(scope.isAdmin
-            ? {} // Admin sees all
-            : { profile: { clientId: scope.clientId } } // Client sees only their data
-        ),
-        ...(profileId && { profileId }),
-        ...(clientId && scope.isAdmin && { profile: { clientId } }), // Only admin can filter by clientId
-        ...(status && { status: status as any }),
-        ...(search && {
-            OR: [
-                { reviewText: { contains: search, mode: "insensitive" } },
-                { notes: { contains: search, mode: "insensitive" } },
-                { profile: { businessName: { contains: search, mode: "insensitive" } } },
-            ],
-        }),
-    } as any;
+    };
+
+    // Handle profile-related filters in a combined way
+    const profileFilters: any = {};
+
+    // CRITICAL: Admin sees only their own clients' reviews
+    if (scope.isAdmin) {
+        // Admin must see only reviews from clients they created
+        profileFilters.client = { userId: scope.userId };
+
+        // If filtering by specific client, add that filter
+        if (clientId) {
+            profileFilters.clientId = clientId;
+        }
+    } else if (scope.clientId) {
+        // Client sees only their own data
+        profileFilters.clientId = scope.clientId;
+    }
+
+    // Add category filter
+    if (category) {
+        profileFilters.category = category;
+    }
+
+    // Apply profile filters if any exist
+    if (Object.keys(profileFilters).length > 0) {
+        where.profile = profileFilters;
+    }
+
+    // Direct review filters
+    if (profileId) {
+        where.profileId = profileId;
+    }
+
+    if (status) {
+        // Support excluding status with "not-" prefix
+        if (status.startsWith("not-")) {
+            const excludeStatus = status.substring(4); // Remove "not-" prefix
+            where.status = { not: excludeStatus };
+        } else {
+            where.status = status as any;
+        }
+    }
+
+    if (search) {
+        where.OR = [
+            { reviewText: { contains: search, mode: "insensitive" } },
+            { notes: { contains: search, mode: "insensitive" } },
+            { profile: { businessName: { contains: search, mode: "insensible" } } },
+        ];
+    }
 
     const [total, reviews] = await Promise.all([
         prisma.review.count({ where }),

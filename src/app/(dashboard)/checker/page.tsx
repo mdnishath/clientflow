@@ -147,7 +147,8 @@ export default function CheckerPage() {
     const { items: reviews, meta, loading } = useAppSelector((state) => state.reviews);
 
     const [page, setPage] = useState(1);
-    const [statusFilter, setStatusFilter] = useState("all");
+    const [loadMode, setLoadMode] = useState<"paginated" | "all">("paginated");
+    const [statusFilter, setStatusFilter] = useState("not-PENDING");
     const [search, setSearch] = useState("");
     const [showArchived, setShowArchived] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -179,14 +180,17 @@ export default function CheckerPage() {
             status?: string;
             search?: string;
             isArchived?: boolean;
-        } = { page, limit: 10 };
+        } = {
+            page: loadMode === "all" ? 1 : page,
+            limit: loadMode === "all" ? 1000 : 20
+        };
 
         if (statusFilter !== "all") params.status = statusFilter;
         if (search) params.search = search;
         if (showArchived) params.isArchived = true;
 
         await dispatch(fetchReviews(params));
-    }, [dispatch, page, statusFilter, search, showArchived]);
+    }, [dispatch, page, loadMode, statusFilter, search, showArchived]);
 
     useEffect(() => {
         setPage(1);
@@ -378,6 +382,16 @@ export default function CheckerPage() {
                         <SelectItem value="DONE">Done</SelectItem>
                     </SelectContent>
                 </Select>
+                <Button
+                    variant={loadMode === "all" ? "default" : "outline"}
+                    onClick={() => {
+                        setLoadMode(loadMode === "paginated" ? "all" : "paginated");
+                        setPage(1);
+                    }}
+                    className={loadMode === "all" ? "bg-indigo-600 hover:bg-indigo-700" : "border-slate-700 text-slate-300"}
+                >
+                    {loadMode === "all" ? "Showing All" : "Load All"}
+                </Button>
                 <Button
                     variant={showArchived ? "default" : "outline"}
                     onClick={() => setShowArchived(!showArchived)}
@@ -651,7 +665,7 @@ export default function CheckerPage() {
             )}
 
             {/* Pagination */}
-            {meta && meta.totalPages > 1 && (
+            {meta && meta.totalPages > 1 && loadMode === "paginated" && (
                 <div className="mt-6">
                     <PaginationControls
                         currentPage={page}

@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
 
   /* config options here */
 
-experimental: {
+  experimental: {
     serverActions: {
       allowedOrigins: ['client-flow.xyz', 'www.client-flow.xyz'],
     },

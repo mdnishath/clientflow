@@ -52,10 +52,13 @@ const initialState: ReviewsState = {
 
 interface FetchReviewsParams {
     profileId?: string;
+    clientId?: string;
+    category?: string;
     status?: string;
     search?: string;
     page?: number;
     limit?: number;
+    isArchived?: boolean;
 }
 
 export const fetchReviews = createAsyncThunk(
@@ -63,8 +66,11 @@ export const fetchReviews = createAsyncThunk(
     async (params: FetchReviewsParams = {}) => {
         const query = new URLSearchParams();
         if (params.profileId) query.set("profileId", params.profileId);
+        if (params.clientId) query.set("clientId", params.clientId);
+        if (params.category) query.set("category", params.category);
         if (params.status && params.status !== "all") query.set("status", params.status);
         if (params.search) query.set("search", params.search);
+        if (params.isArchived) query.set("archived", "true");
         query.set("page", (params.page || 1).toString());
         query.set("limit", (params.limit || 10).toString());
 

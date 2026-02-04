@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { format } from "date-fns";
+import { useSession } from "next-auth/react";
 import {
     Star,
     Plus,
@@ -143,13 +144,22 @@ function ReviewActionButtons({
 export default function ReviewsPage() {
     const dispatch = useAppDispatch();
     const { items: reviews, meta, loading } = useAppSelector((state) => state.reviews);
+    const { data: session } = useSession();
 
     const [page, setPage] = useState(1);
-    const [statusFilter, setStatusFilter] = useState("all");
+    const [statusFilter, setStatusFilter] = useState("PENDING");
+    const [clientFilter, setClientFilter] = useState("all");
+    const [categoryFilter, setCategoryFilter] = useState("all");
+    const [profileFilter, setProfileFilter] = useState("all");
     const [search, setSearch] = useState("");
     const [showArchived, setShowArchived] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+
+    // Filter options
+    const [clients, setClients] = useState<Array<{ id: string; name: string }>>([]);
+    const [categories, setCategories] = useState<string[]>([]);
+    const [profiles, setProfiles] = useState<Array<{ id: string; businessName: string }>>([]);
 
     // Form states
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -158,28 +168,74 @@ export default function ReviewsPage() {
 
     const isLoading = loading === "pending";
 
+    // Fetch filter options
+    useEffect(() => {
+        const fetchFilterOptions = async () => {
+            try {
+                if (session?.user?.role === "ADMIN") {
+                    const [clientsRes, categoriesRes, profilesRes] = await Promise.all([
+                        fetch("/api/filters/options?type=clients"),
+                        fetch("/api/filters/options?type=categories"),
+                        fetch("/api/filters/options?type=profiles"),
+                    ]);
+                    const [clientsData, categoriesData, profilesData] = await Promise.all([
+                        clientsRes.json(),
+                        categoriesRes.json(),
+                        profilesRes.json(),
+                    ]);
+                    setClients(clientsData);
+                    setCategories(categoriesData);
+                    setProfiles(profilesData);
+                } else {
+                    // For clients, only fetch categories and profiles
+                    const [categoriesRes, profilesRes] = await Promise.all([
+                        fetch("/api/filters/options?type=categories"),
+                        fetch("/api/filters/options?type=profiles"),
+                    ]);
+                    const [categoriesData, profilesData] = await Promise.all([
+                        categoriesRes.json(),
+                        profilesRes.json(),
+                    ]);
+                    setCategories(categoriesData);
+                    setProfiles(profilesData);
+                }
+            } catch (error) {
+                console.error("Error fetching filter options:", error);
+            }
+        };
+        if (session?.user) {
+            fetchFilterOptions();
+        }
+    }, [session]);
+
     // Fetch reviews
     const fetchReviewsData = useCallback(async () => {
         const params: {
             page: number;
             limit: number;
+            clientId?: string;
+            category?: string;
+            profileId?: string;
             status?: string;
             search?: string;
             isArchived?: boolean;
         } = { page, limit: 10 };
 
+        if (clientFilter !== "all") params.clientId = clientFilter;
+        if (categoryFilter !== "all") params.category = categoryFilter;
+        if (profileFilter !== "all") params.profileId = profileFilter;
         if (statusFilter !== "all") params.status = statusFilter;
         if (search) params.search = search;
         if (showArchived) params.isArchived = true;
 
         await dispatch(fetchReviews(params));
-    }, [dispatch, page, statusFilter, search, showArchived]);
+    }, [dispatch, page, clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived]);
 
     // Reset page when filters change
     useEffect(() => {
         setPage(1);
         setSelectedIds([]);
-    }, [statusFilter, search, showArchived]);
+    }, [clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived]);
 
     useEffect(() => {
         fetchReviewsData();
@@ -358,6 +414,61 @@ export default function ReviewsPage() {
                         className="pl-9 bg-slate-800/50 border-slate-700 text-white"
                     />
                 </div>
+
+                {/* Admin-only: Filter by Client */}
+                {session?.user?.role === "ADMIN" && clients.length > 0 && (
+                    <Select value={clientFilter} onValueChange={setClientFilter}>
+                        <SelectTrigger className="w-[180px] bg-slate-800/50 border-slate-700 text-white">
+                            <Filter size={14} className="mr-2" />
+                            <SelectValue placeholder="Client" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                            <SelectItem value="all">All Clients</SelectItem>
+                            {clients.map((client) => (
+                                <SelectItem key={client.id} value={client.id}>
+                                    {client.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
+
+                {/* Filter by Category */}
+                {categories.length > 0 && (
+                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                        <SelectTrigger className="w-[180px] bg-slate-800/50 border-slate-700 text-white">
+                            <Filter size={14} className="mr-2" />
+                            <SelectValue placeholder="Category" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                            <SelectItem value="all">All Categories</SelectItem>
+                            {categories.map((category) => (
+                                <SelectItem key={category} value={category}>
+                                    {category}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
+
+                {/* Filter by Profile */}
+                {profiles.length > 0 && (
+                    <Select value={profileFilter} onValueChange={setProfileFilter}>
+                        <SelectTrigger className="w-[200px] bg-slate-800/50 border-slate-700 text-white">
+                            <Filter size={14} className="mr-2" />
+                            <SelectValue placeholder="Profile" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700 max-h-[300px]">
+                            <SelectItem value="all">All Profiles</SelectItem>
+                            {profiles.map((profile) => (
+                                <SelectItem key={profile.id} value={profile.id}>
+                                    {profile.businessName}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
+
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-[150px] bg-slate-800/50 border-slate-700 text-white">
                         <Filter size={14} className="mr-2" />
