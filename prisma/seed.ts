@@ -22,7 +22,7 @@ async function main() {
     // ==========================================
     const adminUser = await prisma.user.create({
         data: {
-            email: "admin@clientflow.local",
+            email: "nishatbd3388@gmail.com",
             name: "Admin User",
             role: "ADMIN",
             canDelete: true,
