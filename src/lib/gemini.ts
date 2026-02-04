@@ -25,10 +25,10 @@ export async function generateReview(
 
     const styleInstructions = {
         detailed:
-            "Write a detailed, helpful review (3-4 sentences) that mentions specific aspects of the service.",
-        short: "Write a brief but positive review (1-2 sentences).",
+            "Write a detailed, helpful review (3-5 lines) that mentions specific aspects of the service.",
+        short: "Write a concise review (minimum 2 lines, max 3 lines). DO NOT write just one sentence.",
         enthusiastic:
-            "Write an enthusiastic, highly positive review (2-3 sentences) with strong recommendations.",
+            "Write an enthusiastic, highly positive review (2-5 lines) with strong recommendations.",
     };
 
     const prompt = `You are helping write a Google Maps review for a ${category} business called "${businessName}".
@@ -42,12 +42,13 @@ Instructions:
 - Use natural language with occasional minor imperfections
 - Don't use excessive exclamation marks or all caps
 - Focus on service quality, atmosphere, and experience
+- STRICTLY 2 to 5 lines of text.
 
 Write ONLY the review text, nothing else.`;
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-2.0-flash-thinking-exp",
             contents: prompt,
         });
 
@@ -131,7 +132,7 @@ RULES:
 - Sound like a REAL human customer, NOT a bot or AI.
 - Use natural language. Include minor imperfections sometimes (like "uhm", "haha", "..." or short sentences).
 - DO NOT use marketing language, excessive exclamation marks, or perfect grammar.
-- Keep it 2-4 sentences.
+- LENGTH REQUIREMENT: Maintain a length between 2 to 5 lines. DO NOT write less than 2 lines.
 - AVOID mentioning discounts, incentives, or "5 stars".
 - NO quotes around your response.
 ${opts.userHint ? `\nADDITIONAL CONTEXT FROM USER: "${opts.userHint}"` : ""}
@@ -148,7 +149,7 @@ export async function generateAdvancedReview(opts: AdvancedReviewOptions): Promi
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-2.0-flash-thinking-exp",
             contents: prompt,
             config: {
                 temperature: 0.9, // Higher for more variety
@@ -180,7 +181,7 @@ export async function generateBatchAdvancedReviews(
         contexts.map(async (ctx) => {
             const prompt = buildAdvancedPrompt(ctx, opts);
             const response = await ai.models.generateContent({
-                model: "gemini-2.0-flash",
+                model: "gemini-2.0-flash-thinking-exp",
                 contents: prompt,
                 config: {
                     temperature: 0.9 + Math.random() * 0.1, // Slight variance
@@ -219,7 +220,7 @@ USER'S NOTE: "${userHint}"
 ${langInstruction}
 
 RULES:
-- Expand the note into a natural 2-3 sentence review.
+- Expand the note into a natural review (min 2 lines, max 5 lines).
 - Sound like a real customer.
 - Keep the same sentiment as the note.
 - NO quotes, NO "5 stars", NO marketing language.
@@ -228,7 +229,7 @@ WRITE THE REVIEW (only the text):`;
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-2.0-flash-thinking-exp",
             contents: prompt,
             config: { temperature: 0.8 },
         });
@@ -265,7 +266,7 @@ export async function generateDualLanguage(
     try {
         // Step 1: Generate French review
         const frenchResponse = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-2.0-flash-thinking-exp",
             contents: prompt,
             config: { temperature: 0.9 },
         });
@@ -285,7 +286,7 @@ TRANSLATION RULES:
 - ONLY output the Bangla translation, nothing else.`;
 
         const banglaResponse = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-2.0-flash-thinking-exp",
             contents: translatePrompt,
             config: { temperature: 0.5 },
         });
@@ -322,7 +323,7 @@ export async function generateBatchDualLanguage(
 
             // Generate French
             const frenchResponse = await ai.models.generateContent({
-                model: "gemini-2.0-flash",
+                model: "gemini-2.0-flash-thinking-exp",
                 contents: prompt,
                 config: { temperature: 0.9 + Math.random() * 0.1 },
             });
@@ -335,7 +336,7 @@ export async function generateBatchDualLanguage(
 Only output the Bangla translation.`;
 
             const banglaResponse = await ai.models.generateContent({
-                model: "gemini-2.0-flash",
+                model: "gemini-2.0-flash-thinking-exp",
                 contents: translatePrompt,
                 config: { temperature: 0.5 },
             });
@@ -352,4 +353,5 @@ Only output the Bangla translation.`;
 
     return results;
 }
+
 
