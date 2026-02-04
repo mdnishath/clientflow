@@ -868,7 +868,7 @@ export const CONTEXT_COUNT = ALL_CONTEXTS.length;
  * Get N random unique contexts from the library
  */
 export function getRandomContexts(count: number, category?: ReviewContext["category"]): ReviewContext[] {
-    let pool = category ? ALL_CONTEXTS.filter(c => c.category === category) : ALL_CONTEXTS;
+    const pool = category ? ALL_CONTEXTS.filter(c => c.category === category) : ALL_CONTEXTS;
 
     // Shuffle using Fisher-Yates
     const shuffled = [...pool];

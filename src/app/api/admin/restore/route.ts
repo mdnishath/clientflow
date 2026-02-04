@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
             // We need to break the User-Client circular link before deleting
             // updateMany cannot be used on unique fields in some Prisma versions, so we use loop
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             const linkedUsers = await tx.user.findMany({
                 where: { linkedClient: { isNot: null } } as any,
                 select: { id: true }
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
             for (const u of clientUsers) {
                 await tx.user.update({
                     where: { id: u.id },
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                     
                     data: {
                         linkedClient: { connect: { id: u.clientId } }
                     } as any,

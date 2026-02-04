@@ -4,8 +4,7 @@ import { NextResponse } from "next/server";
 // Routes that require ADMIN role
 const ADMIN_ROUTES = ["/admin"];
 
-// Routes that are public (no auth required)
-const PUBLIC_ROUTES = ["/login", "/unauthorized"];
+
 
 export default auth((req) => {
     const isLoggedIn = !!req.auth;
