@@ -4,10 +4,12 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
 // PATCH /api/admin/clients/[id] - Update client account
+// PATCH /api/admin/clients/[id] - Update client account
 export async function PATCH(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    props: { params: Promise<{ id: string }> }
 ) {
+    const params = await props.params;
     const error = await requireAdmin();
     if (error) return error;
 
@@ -86,10 +88,12 @@ export async function PATCH(
 }
 
 // DELETE /api/admin/clients/[id] - Delete (archive) client
+// DELETE /api/admin/clients/[id] - Delete (archive) client
 export async function DELETE(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    props: { params: Promise<{ id: string }> }
 ) {
+    const params = await props.params;
     const error = await requireAdmin();
     if (error) return error;
 
