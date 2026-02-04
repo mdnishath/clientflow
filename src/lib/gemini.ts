@@ -25,10 +25,10 @@ export async function generateReview(
 
     const styleInstructions = {
         detailed:
-            "Write a detailed, helpful review (3-5 lines) that mentions specific aspects of the service.",
-        short: "Write a concise review (minimum 2 lines, max 3 lines). DO NOT write just one sentence.",
+            "Write a detailed, helpful review (minimum 40 words). Describe the service, the team, and the result in detail. Use 3-5 complete sentences.",
+        short: "Write a moderate length review (minimum 30 words). Do NOT be too brief. Use at least 3 full sentences.",
         enthusiastic:
-            "Write an enthusiastic, highly positive review (2-5 lines) with strong recommendations.",
+            "Write an enthusiastic, highly positive review (minimum 40 words) with strong recommendations and specific praise.",
     };
 
     const prompt = `You are helping write a Google Maps review for a ${category} business called "${businessName}".
@@ -42,7 +42,8 @@ Instructions:
 - Use natural language with occasional minor imperfections
 - Don't use excessive exclamation marks or all caps
 - Focus on service quality, atmosphere, and experience
-- STRICTLY 2 to 5 lines of text.
+- LENGTH RULE: The review MUST be substantial. It must be at least 30-50 words long. 
+- FORBIDDEN: Do NOT write single-line reviews. Do NOT write short 3-word sentences.
 
 Write ONLY the review text, nothing else.`;
 
@@ -132,7 +133,8 @@ RULES:
 - Sound like a REAL human customer, NOT a bot or AI.
 - Use natural language. Include minor imperfections sometimes (like "uhm", "haha", "..." or short sentences).
 - DO NOT use marketing language, excessive exclamation marks, or perfect grammar.
-- LENGTH REQUIREMENT: Maintain a length between 2 to 5 lines. DO NOT write less than 2 lines.
+- LENGTH REQUIREMENT: The review MUST be substantial (approx 40-60 words). 
+- FORMAT: Write 3-5 full sentences. Do NOT write a single short line.
 - AVOID mentioning discounts, incentives, or "5 stars".
 - NO quotes around your response.
 ${opts.userHint ? `\nADDITIONAL CONTEXT FROM USER: "${opts.userHint}"` : ""}
@@ -220,10 +222,11 @@ USER'S NOTE: "${userHint}"
 ${langInstruction}
 
 RULES:
-- Expand the note into a natural review (min 2 lines, max 5 lines).
+- Expand the note into a natural review (minimum 30 words, 3-5 sentences).
 - Sound like a real customer.
 - Keep the same sentiment as the note.
 - NO quotes, NO "5 stars", NO marketing language.
+- DO NOT be brief. Elaborate on the experience.
 
 WRITE THE REVIEW (only the text):`;
 
