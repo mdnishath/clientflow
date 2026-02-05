@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     const where: any = {
         // ADMIN sees all, CLIENT sees only their client's data
         ...(scope.isAdmin
-            ? {} // Admin sees all
+            ? { client: { userId: scope.userId } } // RBAC: Admin sees only their own clients' profiles
             : { clientId: scope.clientId } // Client sees only their data
         ),
     };

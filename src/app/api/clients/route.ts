@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     const where = {
+        userId: scope.userId, // RBAC: Strict isolation - Admin only sees their own clients
         isArchived: showArchived,
         ...(search && {
             name: { contains: search, mode: "insensitive" },
