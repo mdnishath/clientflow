@@ -155,6 +155,8 @@ export async function POST(request: NextRequest) {
                 businessName: businessName.trim(),
                 gmbLink: gmbLink?.trim() || null,
                 category: category?.trim() || null,
+                reviewLimit: body.reviewLimit ? parseInt(body.reviewLimit) : null,
+                reviewsStartDate: body.reviewsStartDate ? new Date(body.reviewsStartDate) : null,
             },
         });
 

@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Start automation
-    const result = await automationService.startChecks(reviewIds);
+    const result = await automationService.startChecks(reviewIds, session.user.id);
 
     if (!result.success) {
       return NextResponse.json(

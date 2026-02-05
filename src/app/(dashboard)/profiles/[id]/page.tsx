@@ -201,7 +201,8 @@ export default function ProfileDetailPage() {
             status?: string;
             search?: string;
             isArchived?: boolean;
-        } = { profileId, page, limit: 10 };
+            showScheduled?: boolean;
+        } = { profileId, page, limit: 10, showScheduled: true };
 
         if (statusFilter !== "all") params.status = statusFilter;
         if (search) params.search = search;
@@ -714,6 +715,13 @@ export default function ProfileDetailPage() {
                                                     {isLiveOrDone && review.reviewLiveLink && (
                                                         <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">
                                                             Live Review
+                                                        </Badge>
+                                                    )}
+                                                    {review.isScheduled && (
+                                                        <Badge variant="outline" className="border-blue-500/50 text-blue-400 text-xs flex items-center gap-1">
+                                                            <Clock size={10} />
+                                                            Scheduled
+                                                            {review.scheduledFor && ` for ${format(new Date(review.scheduledFor), "MMM d")}`}
                                                         </Badge>
                                                     )}
                                                     {review.notes && (

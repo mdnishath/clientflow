@@ -168,7 +168,8 @@ export default function CheckerPage() {
         isOpen: isProgressOpen,
         setIsOpen: setProgressOpen,
         startChecks,
-        stopChecks
+        stopChecks,
+        reset
     } = useLiveCheck();
 
     const isChecking = checkStatus === "STARTING" || checkStatus === "RUNNING";
@@ -716,6 +717,7 @@ export default function CheckerPage() {
                 isOpen={isProgressOpen}
                 onToggle={setProgressOpen}
                 onStop={stopChecks}
+                onReset={reset}
             />
 
             {/* Review Form */}

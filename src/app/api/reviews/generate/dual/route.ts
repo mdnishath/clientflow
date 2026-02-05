@@ -230,30 +230,40 @@ export async function POST(request: NextRequest) {
             ),
         };
 
-        // Use the anti-AI detection prompt system
-        prompt = getHumanLikePrompt(humanConfig);
-
-        // Track template usage
-        if (template) {
-            templateInfo = { id: template.id, name: template.name, lines: template.lines };
-            await prisma.reviewTemplate.update({
-                where: { id: template.id },
-                data: { usageCount: { increment: 1 } },
-            });
-        } else {
-            templateInfo = { id: "human-like", name: "Anti-AI Human Style", lines: 2 };
-        }
-
         // Generate French
-        const frenchResponse = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
-            contents: prompt,
-            config: { temperature: 0.85 + Math.random() * 0.1 },
-        });
+        let french = "";
 
-        let french = frenchResponse.text?.trim() || "";
-        // Apply anti-AI post-processing for more human-like output
-        french = postProcessReview(french);
+        // CHECK: If no template and we have userHint, use STRICT MASTER PROMPT mode
+        if (!templateId && userHint) {
+            console.log("Using Strict Master Prompt Mode");
+            // Import dynamically to avoid circular deps if any (though strict prompt is in gemini.ts)
+            const { generateStrictMasterPrompt } = await import("@/lib/gemini");
+            french = await generateStrictMasterPrompt(businessCategory, userHint);
+        } else {
+            // Use the anti-AI detection prompt system
+            prompt = getHumanLikePrompt(humanConfig);
+
+            // Track template usage
+            if (template) {
+                templateInfo = { id: template.id, name: template.name, lines: template.lines };
+                await prisma.reviewTemplate.update({
+                    where: { id: template.id },
+                    data: { usageCount: { increment: 1 } },
+                });
+            } else {
+                templateInfo = { id: "human-like", name: "Anti-AI Human Style", lines: 2 };
+            }
+
+            const frenchResponse = await ai.models.generateContent({
+                model: "gemini-2.0-flash",
+                contents: prompt,
+                config: { temperature: 0.85 + Math.random() * 0.1 },
+            });
+
+            french = frenchResponse.text?.trim() || "";
+            // Apply anti-AI post-processing for more human-like output
+            french = postProcessReview(french);
+        }
 
         // Translate to Bangla
         const translatePrompt = `Translate to Bangla (বাংলা): "${french}"

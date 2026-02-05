@@ -685,6 +685,13 @@ export default function ReviewsPage() {
                                                             Live Review
                                                         </Badge>
                                                     )}
+                                                    {review.isScheduled && (
+                                                        <Badge variant="outline" className="border-blue-500/50 text-blue-400 text-xs flex items-center gap-1">
+                                                            <Clock size={10} />
+                                                            Scheduled
+                                                            {review.scheduledFor && ` for ${format(new Date(review.scheduledFor), "MMM d")}`}
+                                                        </Badge>
+                                                    )}
 
                                                     {review.notes && (
                                                         <span className="text-slate-500 truncate max-w-[200px]">

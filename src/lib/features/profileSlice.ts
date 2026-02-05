@@ -10,6 +10,8 @@ export interface GmbProfile {
         id: string;
         name: string;
     };
+    reviewLimit: number | null;
+    reviewsStartDate: string | null;
     _count: { reviews: number };
 }
 

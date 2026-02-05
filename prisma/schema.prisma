@@ -98,6 +98,10 @@ model GmbProfile {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
+  // Scheduling Fields
+  reviewLimit      Int?     @map("review_limit")       // Max live reviews per day
+  reviewsStartDate DateTime? @map("reviews_start_date") // Start date for counting
+
   // Relations
   client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
   reviews   Review[]

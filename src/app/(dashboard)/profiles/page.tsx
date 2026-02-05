@@ -74,6 +74,8 @@ export default function ProfilesPage() {
         businessName: "",
         gmbLink: "",
         category: "",
+        reviewLimit: "",
+        reviewsStartDate: "",
     });
 
     const fetchProfiles = useCallback(async () => {
@@ -143,7 +145,13 @@ export default function ProfilesPage() {
             if (res.ok) {
                 toast.success("Profile created successfully");
                 setIsDialogOpen(false);
-                setNewProfile({ businessName: "", gmbLink: "", category: "" });
+                setNewProfile({
+                    businessName: "",
+                    gmbLink: "",
+                    category: "",
+                    reviewLimit: "",
+                    reviewsStartDate: "",
+                });
                 fetchProfiles();
             } else {
                 const data = await res.json();
@@ -429,6 +437,38 @@ export default function ProfilesPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="reviewLimit" className="text-slate-300">
+                                    Daily Review Limit
+                                </Label>
+                                <Input
+                                    id="reviewLimit"
+                                    type="number"
+                                    min="1"
+                                    value={newProfile.reviewLimit}
+                                    onChange={(e) =>
+                                        setNewProfile({ ...newProfile, reviewLimit: e.target.value })
+                                    }
+                                    placeholder="e.g. 5"
+                                    className="bg-slate-900 border-slate-600 text-white"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="reviewsStartDate" className="text-slate-300">
+                                    Start Date
+                                </Label>
+                                <Input
+                                    id="reviewsStartDate"
+                                    type="date"
+                                    value={newProfile.reviewsStartDate}
+                                    onChange={(e) =>
+                                        setNewProfile({ ...newProfile, reviewsStartDate: e.target.value })
+                                    }
+                                    className="bg-slate-900 border-slate-600 text-white"
+                                />
+                            </div>
                         </div>
                     </div>
                     <DialogFooter>

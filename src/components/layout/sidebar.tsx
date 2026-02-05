@@ -46,8 +46,7 @@ const navigation: NavItem[] = [
     { name: "Clients", href: "/clients", icon: Users, adminOnly: true },
     { name: "Accounts", href: "/admin/accounts", icon: UserCog, adminOnly: true },
     { name: "Import Profiles", href: "/admin/profiles/import", icon: Upload, adminOnly: true },
-    { name: "Templates", href: "/admin/templates", icon: Settings, adminOnly: true },
-    { name: "Contexts", href: "/admin/contexts", icon: Sparkles, adminOnly: true },
+
     { name: "Categories", href: "/admin/categories", icon: FolderOpen, adminOnly: true },
 ];
 

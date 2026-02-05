@@ -14,6 +14,8 @@ export interface Review {
     lastCheckedAt?: string | null;
     screenshotPath?: string | null;
     isArchived?: boolean;
+    isScheduled?: boolean;
+    scheduledFor?: string | null;
     profile: {
         id: string;
         businessName: string;

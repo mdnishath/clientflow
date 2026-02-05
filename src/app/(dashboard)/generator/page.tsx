@@ -16,8 +16,9 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Wand2, Check, X, Languages, CheckCheck, FolderOpen } from "lucide-react";
+
 import { toast } from "sonner";
-import { TemplateSelector } from "@/components/generator/template-selector";
+import { MasterPromptSelector } from "@/components/generator/master-prompt-selector";
 
 interface Profile {
     id: string;
@@ -46,8 +47,6 @@ export default function GeneratorPage() {
     const [selectedCategory, setSelectedCategory] = useState<string>("all");
     const [quantity, setQuantity] = useState<number>(5);
     const [userHint, setUserHint] = useState<string>("");
-    const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
-    const [useRandomTemplates, setUseRandomTemplates] = useState(true); // Default: random
     const [isLoading, setIsLoading] = useState(false);
     const [isBulkApproving, setIsBulkApproving] = useState(false);
     const [generatedReviews, setGeneratedReviews] = useState<GeneratedReview[]>([]);
@@ -166,10 +165,7 @@ export default function GeneratorPage() {
                             profileId,
                             userHint: userHint || undefined,
                             usePromptPriority,
-                            // If random mode, don't pass templateId; otherwise pick from selected
-                            templateId: useRandomTemplates
-                                ? null
-                                : selectedTemplateIds[Math.floor(Math.random() * selectedTemplateIds.length)] || null,
+                            templateId: null,
                             category: profile.category || "GENERAL",
                         }),
                     });
@@ -410,17 +406,7 @@ export default function GeneratorPage() {
                     </div>
 
                     {/* Template Selector */}
-                    <div>
-                        <label className="text-sm text-slate-400 mb-2 block">
-                            Template নির্বাচন (Category → Templates)
-                        </label>
-                        <TemplateSelector
-                            selectedTemplateIds={selectedTemplateIds}
-                            onSelect={setSelectedTemplateIds}
-                            useRandom={useRandomTemplates}
-                            onRandomChange={setUseRandomTemplates}
-                        />
-                    </div>
+
 
                     {/* Quantity Slider */}
                     <div>
@@ -440,22 +426,23 @@ export default function GeneratorPage() {
                         </p>
                     </div>
 
-                    {/* User Hint */}
+                    {/* Master Prompt Input */}
                     <div>
-                        <label className="text-sm text-slate-400 mb-2 block">
-                            ঐচ্ছিক Prompt
-                            {selectedProfiles.length === 1 && (
-                                <span className="text-yellow-400 ml-2 text-xs">
-                                    ★ Single profile - আপনার prompt priority পাবে
-                                </span>
-                            )}
+                        <MasterPromptSelector onSelect={setUserHint} />
+                        <label className="text-sm text-slate-400 mb-2 block mt-4">
+                            Master Prompt (Strict Instructions)
+                            <span className="text-indigo-400 ml-2 text-xs">
+                                ★ AI will strictly follow ONLY this prompt
+                            </span>
                         </label>
                         <Textarea
                             value={userHint}
                             onChange={(e) => setUserHint(e.target.value)}
-                            placeholder="e.g., 'fast delivery', 'roof repair'..."
-                            className="w-full max-w-md bg-slate-800 border-slate-700 text-white"
-                            rows={2}
+                            placeholder={`e.g.,
+Context: Customer visited for coffee and croissant. Service was fast.
+Word Limit: 30-50 words
+Instructions: Mention the latte art and the friendly barista.`}
+                            className="w-full max-w-md bg-slate-800 border-slate-700 text-white min-h-[120px]"
                         />
                     </div>
 

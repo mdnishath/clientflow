@@ -17,8 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Get queue statistics
-    const stats = automationService.getQueueStats();
-    const recentResults = automationService.getRecentResults();
+    const stats = automationService.getQueueStats(session.user.id);
+    const recentResults = automationService.getRecentResults(session.user.id);
 
     return NextResponse.json({
       success: true,

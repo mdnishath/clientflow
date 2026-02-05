@@ -23,6 +23,7 @@ interface LiveCheckProgressProps {
   isOpen: boolean;
   onToggle: (open: boolean) => void;
   onStop: () => void;
+  onReset: () => void;
 }
 
 export function LiveCheckProgress({
@@ -31,6 +32,7 @@ export function LiveCheckProgress({
   isOpen,
   onToggle,
   onStop,
+  onReset,
 }: LiveCheckProgressProps) {
   const isActive = status === "STARTING" || status === "RUNNING";
   const isComplete = status === "COMPLETE";
@@ -231,12 +233,22 @@ export function LiveCheckProgress({
 
         {/* Completed Summary */}
         {isComplete && (
-          <div className="text-center text-sm text-slate-400">
-            <span className="text-green-400 font-medium">{stats.liveCount}</span> live, {" "}
-            <span className="text-red-400 font-medium">{stats.missingCount}</span> missing
-            {stats.errorCount > 0 && (
-              <>, <span className="text-orange-400 font-medium">{stats.errorCount}</span> errors</>
-            )}
+          <div className="space-y-3">
+            <div className="text-center text-sm text-slate-400">
+              <span className="text-green-400 font-medium">{stats.liveCount}</span> live, {" "}
+              <span className="text-red-400 font-medium">{stats.missingCount}</span> missing
+              {stats.errorCount > 0 && (
+                <>, <span className="text-orange-400 font-medium">{stats.errorCount}</span> errors</>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onReset}
+              className="w-full border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              Clear & Close
+            </Button>
           </div>
         )}
       </CardContent>

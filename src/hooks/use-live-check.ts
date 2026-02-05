@@ -176,11 +176,21 @@ export function useLiveCheck(onComplete?: () => void) {
         }
     };
 
-    const reset = () => {
+    const reset = async () => {
         setStatus("IDLE");
         setStats(INITIAL_STATS);
         setIsOpen(false);
         processedResultsRef.current.clear();
+
+        try {
+            await fetch("/api/automation/reset", {
+                method: "POST",
+                credentials: "include",
+            });
+            toast.success("Check queue cleared");
+        } catch (error) {
+            console.error("Failed to reset queue:", error);
+        }
     };
 
     return {

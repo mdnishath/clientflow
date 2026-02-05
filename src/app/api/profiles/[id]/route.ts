@@ -132,7 +132,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     try {
         const body = await request.json();
-        const { businessName, gmbLink, category, isArchived } = body;
+        const { businessName, gmbLink, category, isArchived, reviewLimit, reviewsStartDate } = body;
 
         const existing = await prisma.gmbProfile.findFirst({
             where: whereClause,
@@ -149,6 +149,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
                 ...(gmbLink !== undefined && { gmbLink: gmbLink?.trim() || null }),
                 ...(category !== undefined && { category: category?.trim() || null }),
                 ...(isArchived !== undefined && { isArchived }),
+                ...(body.reviewLimit !== undefined && { reviewLimit: body.reviewLimit ? parseInt(body.reviewLimit) : null }),
+                ...(body.reviewsStartDate !== undefined && { reviewsStartDate: body.reviewsStartDate ? new Date(body.reviewsStartDate) : null }),
             },
         });
 

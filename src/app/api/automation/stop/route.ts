@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Stop checks
-    const result = automationService.stopChecks();
+    const result = automationService.stopChecks(session.user.id);
 
     return NextResponse.json(result);
   } catch (error) {

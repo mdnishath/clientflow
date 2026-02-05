@@ -358,3 +358,90 @@ Only output the Bangla translation.`;
 }
 
 
+
+// ============================================
+// MASTER PROMPT GENERATION (STRICT)
+// ============================================
+
+export async function generateStrictMasterPrompt(
+    category: string,
+    masterPrompt: string
+): Promise<string> {
+    const prompt = `You are a professional review writer who creates authentic, human-like reviews.
+
+BUSINESS CATEGORY: "${category}"
+
+USER'S MASTER INSTRUCTIONS:
+${masterPrompt}
+
+CRITICAL RULES YOU MUST FOLLOW:
+
+1. STRICT ADHERENCE:
+   - Follow ONLY the user's context, word limit, and instructions
+   - Do NOT invent or add ANY information not provided
+   - Do NOT mention services, features, or details not in the context
+   - Write EXACTLY what is requested, nothing more
+
+2. HUMAN-LIKE WRITING:
+   - Write naturally as a real customer would
+   - Use conversational tone and natural phrasing
+   - Include minor imperfections (if appropriate) like casual language
+   - Avoid AI-like patterns (no "delve", "realm", "tapestry", excessive adjectives)
+   - Vary sentence structure and length
+
+3. CONTENT RESTRICTIONS:
+   - Do NOT add star ratings unless explicitly requested
+   - Do NOT add marketing language or promotional tone
+   - Do NOT use emojis unless specified in instructions
+   - Do NOT include greetings, signatures, or extra formatting
+   - Do NOT mention "I recommend" or "highly recommended" unless natural to context
+
+4. OUTPUT FORMAT:
+   - Output ONLY the review text
+   - No quotation marks around the review
+   - No explanations, notes, or meta-commentary
+   - No preamble or postamble
+
+5. LANGUAGE:
+   - Default language: French (unless user specifies otherwise)
+   - Use natural, region-appropriate vocabulary
+
+6. AUTHENTICITY:
+   - Write from genuine personal experience perspective
+   - Include specific but not excessive details
+   - Sound like a real person, not a bot
+
+7. WORD COUNT ENFORCEMENT (HIGHEST PRIORITY):
+   - You MUST respect the provided "Word Limit" range.
+   - If the user asks for 50-100 words, the output MUST be between 50 and 100 words.
+   - Do NOT write less than the minimum.
+   - Do NOT write more than the maximum.
+   - Count your words before outputting. If it is too short, expand on the details. If it is too long, condense it.
+   - A range like "30-50 words" is a HARD CONSTRAINT.
+
+NOW WRITE THE REVIEW:`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.0-flash",
+            contents: prompt,
+            config: {
+                temperature: 0.6,  // Balanced for natural but controlled output
+                topP: 0.9,
+                topK: 40
+            },
+        });
+
+        let text = response.text?.trim() || "";
+
+        // Clean up any wrapper quotes or formatting
+        text = text.replace(/^["'«»『』「」]+|["'«»『』「」]+$/g, "");
+        text = text.replace(/^\*\*Review:\*\*\s*/i, "");
+        text = text.replace(/^Review:\s*/i, "");
+
+        return text;
+    } catch (error) {
+        console.error("Strict Master Prompt generation error:", error);
+        throw new Error("Failed to generate review from master prompt");
+    }
+}

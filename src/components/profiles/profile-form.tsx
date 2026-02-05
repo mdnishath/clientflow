@@ -23,6 +23,8 @@ interface GmbProfile {
     businessName: string;
     gmbLink: string | null;
     category: string | null;
+    reviewLimit: number | null;
+    reviewsStartDate: string | null;
 }
 
 interface CategoryOption {
@@ -49,6 +51,8 @@ export function ProfileForm({
     const [businessName, setBusinessName] = useState("");
     const [gmbLink, setGmbLink] = useState("");
     const [category, setCategory] = useState("__none__");
+    const [reviewLimit, setReviewLimit] = useState("");
+    const [reviewsStartDate, setReviewsStartDate] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
 
@@ -84,6 +88,12 @@ export function ProfileForm({
             setBusinessName(profile.businessName || "");
             setGmbLink(profile.gmbLink || "");
             setCategory(profile.category || "__none__");
+            setReviewLimit(profile.reviewLimit ? profile.reviewLimit.toString() : "");
+            setReviewsStartDate(
+                profile.reviewsStartDate
+                    ? new Date(profile.reviewsStartDate).toISOString().split("T")[0]
+                    : ""
+            );
         } else if (open) {
             resetForm();
         }
@@ -103,6 +113,8 @@ export function ProfileForm({
                 businessName,
                 gmbLink,
                 category: category === "__none__" ? null : category,
+                reviewLimit: reviewLimit ? parseInt(reviewLimit) : null,
+                reviewsStartDate: reviewsStartDate ? new Date(reviewsStartDate) : null,
             };
 
             if (!isEditing && clientId) {
@@ -134,6 +146,8 @@ export function ProfileForm({
         setBusinessName("");
         setGmbLink("");
         setCategory("__none__");
+        setReviewLimit("");
+        setReviewsStartDate("");
         setError("");
     };
 
@@ -182,6 +196,35 @@ export function ProfileForm({
                                 ))}
                             </SelectContent>
                         </Select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="reviewLimit" className="text-slate-200">
+                                Daily Review Limit
+                            </Label>
+                            <Input
+                                id="reviewLimit"
+                                type="number"
+                                min="1"
+                                value={reviewLimit}
+                                onChange={(e) => setReviewLimit(e.target.value)}
+                                placeholder="e.g. 5"
+                                className="bg-slate-700/50 border-slate-600 text-white"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="reviewsStartDate" className="text-slate-200">
+                                Start Date
+                            </Label>
+                            <Input
+                                id="reviewsStartDate"
+                                type="date"
+                                value={reviewsStartDate}
+                                onChange={(e) => setReviewsStartDate(e.target.value)}
+                                className="bg-slate-700/50 border-slate-600 text-white"
+                            />
+                        </div>
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="gmbLink" className="text-slate-200">
