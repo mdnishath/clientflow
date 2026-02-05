@@ -29,19 +29,19 @@ async function getDashboardData(userId: string, role: string, clientId: string |
     // Build where clause based on role
     // For clients without linked clientId, show nothing
     const reviewWhere = isAdmin
-        ? { isArchived: false }
+        ? { isArchived: false, profile: { client: { userId } } } // Admin: only reviews from their own clients
         : clientId
             ? { profile: { clientId }, isArchived: false }
             : { id: "__no_data__", isArchived: false }; // No data if no clientId
 
     const profileWhere = isAdmin
-        ? { isArchived: false }
+        ? { isArchived: false, client: { userId } } // Admin: only profiles from their own clients
         : clientId
             ? { clientId, isArchived: false }
             : { id: "__no_data__", isArchived: false };
 
     const clientWhere = isAdmin
-        ? { isArchived: false }
+        ? { isArchived: false, userId } // Admin: only their own clients
         : clientId
             ? { id: clientId, isArchived: false }
             : { id: "__no_data__", isArchived: false };
