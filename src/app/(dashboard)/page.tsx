@@ -75,6 +75,7 @@ async function getDashboardData(userId: string, role: string, clientId: string |
             dueDate: { lt: new Date() },
             status: { notIn: ["DONE", "LIVE"] },
             isArchived: false,
+            profile: { client: { userId } }, // RBAC: Scoped to Admin
         }
         : clientId
             ? {
@@ -105,6 +106,7 @@ async function getDashboardData(userId: string, role: string, clientId: string |
             dueDate: { gte: today, lt: tomorrow },
             status: { notIn: ["DONE", "LIVE"] },
             isArchived: false,
+            profile: { client: { userId } }, // RBAC: Scoped to Admin
         }
         : clientId
             ? {
