@@ -56,7 +56,7 @@ export default function GeneratorPage() {
     useEffect(() => {
         async function fetchProfiles() {
             try {
-                const res = await fetch("/api/profiles");
+                const res = await fetch("/api/profiles?limit=1000"); // Load all profiles (up to 1000)
                 if (res.ok) {
                     const data = await res.json();
                     setProfiles(data);
