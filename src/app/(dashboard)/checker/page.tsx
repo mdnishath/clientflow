@@ -149,6 +149,7 @@ export default function CheckerPage() {
     const [page, setPage] = useState(1);
     const [loadMode, setLoadMode] = useState<"paginated" | "all">("paginated");
     const [statusFilter, setStatusFilter] = useState("not-PENDING");
+    const [checkStatusFilter, setCheckStatusFilter] = useState("all");
     const [search, setSearch] = useState("");
     const [showArchived, setShowArchived] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -178,6 +179,7 @@ export default function CheckerPage() {
             page: number;
             limit: number;
             status?: string;
+            checkStatus?: string;
             search?: string;
             isArchived?: boolean;
         } = {
@@ -186,16 +188,17 @@ export default function CheckerPage() {
         };
 
         if (statusFilter !== "all") params.status = statusFilter;
+        if (checkStatusFilter !== "all") params.checkStatus = checkStatusFilter;
         if (search) params.search = search;
         if (showArchived) params.isArchived = true;
 
         await dispatch(fetchReviews(params));
-    }, [dispatch, page, loadMode, statusFilter, search, showArchived]);
+    }, [dispatch, page, loadMode, statusFilter, checkStatusFilter, search, showArchived]);
 
     useEffect(() => {
         setPage(1);
         setSelectedIds([]);
-    }, [statusFilter, search, showArchived]);
+    }, [statusFilter, checkStatusFilter, search, showArchived]);
 
     useEffect(() => {
         fetchReviewsData();
@@ -380,6 +383,36 @@ export default function CheckerPage() {
                         <SelectItem value="GOOGLE_ISSUE">Google Issue</SelectItem>
                         <SelectItem value="LIVE">Live</SelectItem>
                         <SelectItem value="DONE">Done</SelectItem>
+                    </SelectContent>
+                </Select>
+
+                <Select value={checkStatusFilter} onValueChange={setCheckStatusFilter}>
+                    <SelectTrigger className="w-[150px] bg-slate-800/50 border-slate-700 text-white">
+                        <CheckCircle2 size={14} className="mr-2" />
+                        <SelectValue placeholder="Badge" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700">
+                        <SelectItem value="all">All Badges</SelectItem>
+                        <SelectItem value="LIVE">
+                            <span className="flex items-center text-green-400">
+                                <CheckCircle2 size={12} className="mr-2" /> Live
+                            </span>
+                        </SelectItem>
+                        <SelectItem value="MISSING">
+                            <span className="flex items-center text-yellow-500">
+                                <AlertCircle size={12} className="mr-2" /> Missing
+                            </span>
+                        </SelectItem>
+                        <SelectItem value="ERROR">
+                            <span className="flex items-center text-red-400">
+                                <AlertCircle size={12} className="mr-2" /> Error
+                            </span>
+                        </SelectItem>
+                        <SelectItem value="CHECKING">
+                            <span className="flex items-center text-blue-400">
+                                <Activity size={12} className="mr-2" /> Checking
+                            </span>
+                        </SelectItem>
                     </SelectContent>
                 </Select>
                 <Button

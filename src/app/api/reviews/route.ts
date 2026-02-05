@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     const clientId = searchParams.get("clientId");
     const category = searchParams.get("category");
     const status = searchParams.get("status");
+    const checkStatus = searchParams.get("checkStatus");
     const showArchived = searchParams.get("archived") === "true";
     const search = searchParams.get("search");
 
@@ -28,6 +29,11 @@ export async function GET(request: NextRequest) {
     const where: any = {
         isArchived: showArchived,
     };
+
+    // Handle check status filter (Badge)
+    if (checkStatus && checkStatus !== "all") {
+        where.checkStatus = checkStatus;
+    }
 
     // Handle profile-related filters in a combined way
     const profileFilters: any = {};
