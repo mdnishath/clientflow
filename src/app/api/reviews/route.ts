@@ -83,112 +83,120 @@ export async function GET(request: NextRequest) {
 
     const where: any = { AND: andConditions };
 
-    const [total, reviews] = await Promise.all([
-        prisma.review.count({ where }),
-        prisma.review.findMany({
-            where,
-            include: {
-                profile: {
-                    select: {
-                        id: true,
-                        businessName: true,
-                        gmbLink: true,
-                        category: true,
-                        clientId: true,
-                        client: { select: { name: true } },
-                        // Include scheduling fields
-                        reviewLimit: true,
-                        reviewsStartDate: true,
-                    },
+    // 4. Fetch ALL matching reviews (without pagination args) to process scheduling correctly
+    // We strictly limit to 1000 to prevent memory blowup, but this is enough for "Active" views
+    // For "Archived" or full dumps, we might need a different strategy, but for the main feed this is best.
+    const reviews = await prisma.review.findMany({
+        where,
+        include: {
+            profile: {
+                select: {
+                    id: true,
+                    businessName: true,
+                    gmbLink: true,
+                    category: true,
+                    clientId: true,
+                    client: { select: { name: true } },
+                    reviewLimit: true,
+                    reviewsStartDate: true,
                 },
             },
-            // Order by profile first to group for calculation, then by date
-            orderBy: [
-                { profileId: "asc" },
-                { completedAt: "asc" }, // Ascending to count limits correctly
-            ],
-            // Note: Pagination messes up limit calc if we don't load all for that profile
-            // For now, we apply logic only on visible page or if filtered by profile
-            skip,
-            take: limit,
-        }),
-    ]);
-
-    // Apply Scheduling Logic Globally
-    // We calculate the queue position (index) for EACH review dynamically.
-    // This allows the logic to work on the main feed (multi-profile) and single-profile views alike.
-
-    // Check strict filtering preference
-    const showScheduled = searchParams.get("showScheduled") === "true";
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const processedReviewsWithSchedule = await Promise.all(reviews.map(async (review) => {
-        const { reviewLimit, reviewsStartDate } = review.profile;
-
-        let isScheduled = false;
-        let scheduledFor = null;
-
-        if (reviewLimit && reviewsStartDate) {
-            // Count how many valid reviews exist BEFORE this one for this profile
-            // This determines its "Index" in the virtual queue
-            const queueIndex = await prisma.review.count({
-                where: {
-                    profileId: review.profileId,
-                    isArchived: false,
-                    OR: [
-                        { createdAt: { lt: review.createdAt } },
-                        { createdAt: review.createdAt, id: { lt: review.id } } // Tie-breaker
-                    ]
-                }
-            });
-
-            // Calculate Date
-            const dayOffset = Math.floor(queueIndex / reviewLimit);
-
-            const startDate = new Date(reviewsStartDate);
-            startDate.setHours(0, 0, 0, 0);
-
-            const scheduledDate = new Date(startDate);
-            scheduledDate.setDate(startDate.getDate() + dayOffset);
-
-            // Set fields if future
-            if (scheduledDate > today) {
-                isScheduled = true;
-                scheduledFor = scheduledDate.toISOString();
-            } else {
-                // It is "Active" (today or past), but we can still show the date it was scheduled for if useful
-                scheduledFor = scheduledDate.toISOString();
-            }
-        }
-
-        return {
-            ...review,
-            isScheduled,
-            scheduledFor
-        };
-    }));
-
-    let processedReviews = processedReviewsWithSchedule;
-
-    // Filter out scheduled reviews unless explicitly requested
-    if (!showScheduled) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        processedReviews = processedReviews.filter((r: any) => !r.isScheduled);
-    }
-
-    // RE-SORT by original desc order for display
-    const sortedReviews = processedReviews.sort((a, b) => {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        },
+        orderBy: { createdAt: "asc" }, // Ascending needed for correct queue calculation
+        take: 2000, // Safety cap
     });
 
+    // 5. In-Memory Processing: Group by Profile -> Calculate Schedule -> Flatten
+    // This avoids N+1 DB queries and allows correct filtering
+    const reviewsByProfile: Record<string, typeof reviews> = {};
+
+    // Group
+    for (const r of reviews) {
+        if (!reviewsByProfile[r.profileId]) {
+            reviewsByProfile[r.profileId] = [];
+        }
+        reviewsByProfile[r.profileId].push(r);
+    }
+
+    const processedReviews = [];
+
+    // Process each profile's queue
+    for (const profileId in reviewsByProfile) {
+        const profileReviews = reviewsByProfile[profileId];
+        // Ensure sorted by creation for queue logic (should be from DB, but safety check)
+        // Note: We use createdAt and ID for stable sort
+        profileReviews.sort((a, b) => {
+            const timeA = new Date(a.createdAt).getTime();
+            const timeB = new Date(b.createdAt).getTime();
+            return timeA === timeB ? (a.id < b.id ? -1 : 1) : timeA - timeB;
+        });
+
+        // Calculate schedule for this profile
+        const { reviewLimit, reviewsStartDate } = profileReviews[0].profile;
+
+        for (let i = 0; i < profileReviews.length; i++) {
+            const review = profileReviews[i];
+
+            // Only non-archived reviews count towards the schedule limit? 
+            // Usually yes, but if we archive a review, does it "free up" a slot?
+            // Existing logic suggested: "isArchived: false" was used in the count query.
+            // So we only count VALID reviews for the queue index.
+
+            let isScheduled = false;
+            let scheduledFor = null;
+
+            if (!review.isArchived && reviewLimit && reviewsStartDate) {
+                // Filter previous reviews to find true index (ignoring archived ones before this)
+                // Since this loop iterates ALL, we need to count how many unarchived ones were before this index
+                const validQueueIndex = profileReviews.slice(0, i).filter(r => !r.isArchived).length;
+
+                const dayOffset = Math.floor(validQueueIndex / reviewLimit);
+                const startDate = new Date(reviewsStartDate);
+                startDate.setHours(0, 0, 0, 0);
+
+                const scheduledDate = new Date(startDate);
+                scheduledDate.setDate(startDate.getDate() + dayOffset);
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                if (scheduledDate > today) {
+                    isScheduled = true;
+                }
+                scheduledFor = scheduledDate.toISOString();
+            }
+
+            processedReviews.push({ ...review, isScheduled, scheduledFor });
+        }
+    }
+
+    // 6. Global Filtering & Pagination
+    const showScheduled = searchParams.get("showScheduled") === "true";
+
+    let filteredReviews = processedReviews;
+
+    // Filter scheduled if not requested
+    if (!showScheduled) {
+        filteredReviews = filteredReviews.filter(r => !r.isScheduled);
+    }
+
+    // Re-Sort by CreatedAt DESC (Recent first) for the feed
+    filteredReviews.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Calculate Total AFTER filtering (This fixes the "Pagination showing even if 2 items" bug)
+    const total = filteredReviews.length;
+    const totalPages = Math.ceil(total / limit);
+
+    // Apply Pagination Slice
+    const paginatedReviews = filteredReviews.slice(skip, skip + limit);
+
     return NextResponse.json({
-        data: sortedReviews,
+        data: paginatedReviews,
         meta: {
             total,
             page,
             limit,
-            totalPages: Math.ceil(total / limit),
+            totalPages,
         },
     });
 }
