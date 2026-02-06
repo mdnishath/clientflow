@@ -134,39 +134,65 @@ export async function GET(request: NextRequest) {
         // Calculate schedule for this profile
         const { reviewLimit, reviewsStartDate } = profileReviews[0].profile;
 
-        for (let i = 0; i < profileReviews.length; i++) {
-            const review = profileReviews[i];
+        // Only non-archived reviews count towards the schedule limit? 
+        // STRICT DAILY LIMIT LOGIC
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-            // Only non-archived reviews count towards the schedule limit? 
-            // Usually yes, but if we archive a review, does it "free up" a slot?
-            // Existing logic suggested: "isArchived: false" was used in the count query.
-            // So we only count VALID reviews for the queue index.
+        if (reviewLimit && reviewsStartDate) {
+            // 1. Calculate how many have been DONE/LIVE *today* for this profile
+            const doneTodayCount = profileReviews.filter(r =>
+                (r.status === "DONE" || r.status === "LIVE") &&
+                r.completedAt &&
+                new Date(r.completedAt) >= today
+            ).length;
 
-            let isScheduled = false;
-            let scheduledFor = null;
+            // 2. Determine Remaining Quota
+            // If reviewLimit is null, assume unlimited (or high default)
+            // If limit is 0, nothing should show? Assumed 0 means paused.
+            const limit = reviewLimit || 1000;
+            const remainingQuota = Math.max(0, limit - doneTodayCount);
 
-            if (!review.isArchived && reviewLimit && reviewsStartDate) {
-                // Filter previous reviews to find true index (ignoring archived ones before this)
-                // Since this loop iterates ALL, we need to count how many unarchived ones were before this index
-                const validQueueIndex = profileReviews.slice(0, i).filter(r => !r.isArchived).length;
+            // 3. Mark reviews as Scheduled/Hidden based on quota
+            // We iterate through PENDING/IN_PROGRESS reviews to assign visibility
 
-                const dayOffset = Math.floor(validQueueIndex / reviewLimit);
-                const startDate = new Date(reviewsStartDate);
-                startDate.setHours(0, 0, 0, 0);
+            let quotaUsed = 0;
 
-                const scheduledDate = new Date(startDate);
-                scheduledDate.setDate(startDate.getDate() + dayOffset);
+            for (let i = 0; i < profileReviews.length; i++) {
+                const review = profileReviews[i];
+                let isScheduled = false;
+                let scheduledFor = null;
 
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
+                // Identify if this review counts against the "Pending Quota"
+                const isPendingType = review.status !== "DONE" && review.status !== "LIVE" && !review.isArchived;
 
-                if (scheduledDate > today) {
-                    isScheduled = true;
+                if (isPendingType) {
+                    if (quotaUsed < remainingQuota) {
+                        // This review fits in today's quota!
+                        // It stays visible (isScheduled = false)
+                        quotaUsed++;
+                    } else {
+                        // Quota full! Schedule for tomorrow (or later)
+                        isScheduled = true;
+
+                        // Calculate a theoretical future date (Backlog logic)
+                        // This helps admins see "When will this ideally happen?"
+                        // but strictly HIDES it from the main "Today" view.
+                        const futureDays = Math.floor((quotaUsed - remainingQuota) / limit) + 1;
+                        const futureDate = new Date(today);
+                        futureDate.setDate(today.getDate() + futureDays);
+                        scheduledFor = futureDate.toISOString();
+
+                        // Increment quota to push next reviews further out
+                        quotaUsed++;
+                    }
                 }
-                scheduledFor = scheduledDate.toISOString();
-            }
 
-            processedReviews.push({ ...review, isScheduled, scheduledFor });
+                processedReviews.push({ ...review, isScheduled, scheduledFor });
+            }
+        } else {
+            // No limit/start date configured -> Show all
+            processedReviews.push(...profileReviews.map(r => ({ ...r, isScheduled: false, scheduledFor: null })));
         }
     }
 
