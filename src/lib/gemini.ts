@@ -367,6 +367,29 @@ export async function generateStrictMasterPrompt(
     category: string,
     masterPrompt: string
 ): Promise<string> {
+    // Dynamic Variance Injection
+    const personas = [
+        "a relieved homeowner who was stressed",
+        "a busy professional who values efficiency",
+        "a detail-oriented person who appreciates technical skill",
+        "a happy customer who is pleasantly surprised",
+        "a straightforward person who hates wasting time",
+        "a grateful client saving for the future",
+        "a cautious person who usually doesn't write reviews"
+    ];
+
+    const structures = [
+        "Start directly with the problem you faced.",
+        "Start with the emotion you felt after the job was done.",
+        "Start by mentioning the specific technical action they took.",
+        "Start by praising the team's attitude.",
+        "Start with a short punchy sentence.",
+        "Use a rhetorical question if it fits."
+    ];
+
+    const randomPersona = personas[Math.floor(Math.random() * personas.length)];
+    const randomStructure = structures[Math.floor(Math.random() * structures.length)];
+
     const prompt = `You are a professional review writer who creates authentic, human-like reviews.
 
 BUSINESS CATEGORY: "${category}"
@@ -383,14 +406,12 @@ CRITICAL RULES YOU MUST FOLLOW:
    - Write EXACTLY what is requested, nothing more
 
 2. HUMAN-LIKE WRITING & VARIETY:
-   - Write naturally as a real customer would
-   - Use conversational tone and natural phrasing
-   - Include minor imperfections (if appropriate) like casual language
-   - Avoid AI-like patterns (no "delve", "realm", "tapestry", excessive adjectives)
+   - **TODAY'S PERSONA:** Write as ${randomPersona}.
+   - **STRUCTURAL GOAL:** ${randomStructure}
    - VARY YOUR SENTENCE STRUCTURE. Do NOT start every review with the same phrase.
    - Use different adjectives and sentence lengths.
    - VARIATION SEED: ${Math.random()} (Use this to ensure unique output)
-   - CRITICAL: Do NOT start with "Super content du service" or "Super service". Start with the action, the problem, or a different emotion.
+   - CRITICAL: Do NOT start with "Super content du service", "Super service", or "Après la grosse pluie". Start differently.
 
 3. CONTENT RESTRICTIONS:
    - Do NOT add star ratings unless explicitly requested
@@ -426,10 +447,10 @@ NOW WRITE THE REVIEW:`;
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-1.5-pro",
+            model: "gemini-2.0-flash",
             contents: prompt,
             config: {
-                temperature: 0.95,  // Increased for more variety
+                temperature: 0.98,  // Maximum safe entropy
                 topP: 0.95,
                 topK: 40
             },
