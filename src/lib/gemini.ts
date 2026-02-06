@@ -390,6 +390,7 @@ CRITICAL RULES YOU MUST FOLLOW:
    - VARY YOUR SENTENCE STRUCTURE. Do NOT start every review with the same phrase.
    - Use different adjectives and sentence lengths.
    - VARIATION SEED: ${Math.random()} (Use this to ensure unique output)
+   - CRITICAL: Do NOT start with "Super content du service" or "Super service". Start with the action, the problem, or a different emotion.
 
 3. CONTENT RESTRICTIONS:
    - Do NOT add star ratings unless explicitly requested
@@ -425,7 +426,7 @@ NOW WRITE THE REVIEW:`;
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-2.0-flash-thinking-exp",
             contents: prompt,
             config: {
                 temperature: 0.95,  // Increased for more variety
