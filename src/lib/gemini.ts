@@ -382,12 +382,14 @@ CRITICAL RULES YOU MUST FOLLOW:
    - Do NOT mention services, features, or details not in the context
    - Write EXACTLY what is requested, nothing more
 
-2. HUMAN-LIKE WRITING:
+2. HUMAN-LIKE WRITING & VARIETY:
    - Write naturally as a real customer would
    - Use conversational tone and natural phrasing
    - Include minor imperfections (if appropriate) like casual language
    - Avoid AI-like patterns (no "delve", "realm", "tapestry", excessive adjectives)
-   - Vary sentence structure and length
+   - VARY YOUR SENTENCE STRUCTURE. Do NOT start every review with the same phrase.
+   - Use different adjectives and sentence lengths.
+   - VARIATION SEED: ${Math.random()} (Use this to ensure unique output)
 
 3. CONTENT RESTRICTIONS:
    - Do NOT add star ratings unless explicitly requested
@@ -426,8 +428,8 @@ NOW WRITE THE REVIEW:`;
             model: "gemini-2.0-flash",
             contents: prompt,
             config: {
-                temperature: 0.6,  // Balanced for natural but controlled output
-                topP: 0.9,
+                temperature: 0.95,  // Increased for more variety
+                topP: 0.95,
                 topK: 40
             },
         });
