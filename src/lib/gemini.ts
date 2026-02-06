@@ -426,7 +426,7 @@ NOW WRITE THE REVIEW:`;
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash-thinking-exp",
+            model: "gemini-1.5-pro",
             contents: prompt,
             config: {
                 temperature: 0.95,  // Increased for more variety
