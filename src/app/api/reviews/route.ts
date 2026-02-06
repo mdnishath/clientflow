@@ -120,11 +120,37 @@ export async function GET(request: NextRequest) {
 
     const processedReviews = [];
 
+    const profileIds = Object.keys(reviewsByProfile);
+
+    // 5b. Fetch "Done Today" Counts separately (Fix for the bug where filtering hides Done reviews)
+    // We need to know how many reviews were completed TODAY for these profiles, 
+    // regardless of whether the current user is filtering by "Pending" or not.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const doneCounts = await prisma.review.groupBy({
+        by: ["profileId"],
+        where: {
+            profileId: { in: profileIds },
+            status: { in: ["DONE", "LIVE"] },
+            completedAt: { gte: today },
+            isArchived: false
+        },
+        _count: { id: true }
+    });
+
+    const doneTodayMap: Record<string, number> = {};
+    doneCounts.forEach(c => {
+        doneTodayMap[c.profileId] = c._count.id;
+    });
+
+    const processedReviews = [];
+
     // Process each profile's queue
     for (const profileId in reviewsByProfile) {
         const profileReviews = reviewsByProfile[profileId];
-        // Ensure sorted by creation for queue logic (should be from DB, but safety check)
-        // Note: We use createdAt and ID for stable sort
+
+        // Ensure sorted by creation for queue logic
         profileReviews.sort((a, b) => {
             const timeA = new Date(a.createdAt).getTime();
             const timeB = new Date(b.createdAt).getTime();
@@ -134,28 +160,15 @@ export async function GET(request: NextRequest) {
         // Calculate schedule for this profile
         const { reviewLimit, reviewsStartDate } = profileReviews[0].profile;
 
-        // Only non-archived reviews count towards the schedule limit? 
-        // STRICT DAILY LIMIT LOGIC
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
         if (reviewLimit && reviewsStartDate) {
-            // 1. Calculate how many have been DONE/LIVE *today* for this profile
-            const doneTodayCount = profileReviews.filter(r =>
-                (r.status === "DONE" || r.status === "LIVE") &&
-                r.completedAt &&
-                new Date(r.completedAt) >= today
-            ).length;
+            // 1. Get accurate "Done Today" count from the separate query
+            const doneTodayCount = doneTodayMap[profileId] || 0;
 
             // 2. Determine Remaining Quota
-            // If reviewLimit is null, assume unlimited (or high default)
-            // If limit is 0, nothing should show? Assumed 0 means paused.
-            const limit = reviewLimit || 1000;
+            const limit = reviewLimit;
             const remainingQuota = Math.max(0, limit - doneTodayCount);
 
             // 3. Mark reviews as Scheduled/Hidden based on quota
-            // We iterate through PENDING/IN_PROGRESS reviews to assign visibility
-
             let quotaUsed = 0;
 
             for (let i = 0; i < profileReviews.length; i++) {
@@ -164,26 +177,24 @@ export async function GET(request: NextRequest) {
                 let scheduledFor = null;
 
                 // Identify if this review counts against the "Pending Quota"
+                // It counts if it is NOT Done/Live (e.g. Pending, In_Progress, Missing)
+                // AND it is not archived.
                 const isPendingType = review.status !== "DONE" && review.status !== "LIVE" && !review.isArchived;
 
                 if (isPendingType) {
                     if (quotaUsed < remainingQuota) {
                         // This review fits in today's quota!
-                        // It stays visible (isScheduled = false)
                         quotaUsed++;
                     } else {
                         // Quota full! Schedule for tomorrow (or later)
                         isScheduled = true;
 
-                        // Calculate a theoretical future date (Backlog logic)
-                        // This helps admins see "When will this ideally happen?"
-                        // but strictly HIDES it from the main "Today" view.
+                        // Calculate future date
                         const futureDays = Math.floor((quotaUsed - remainingQuota) / limit) + 1;
                         const futureDate = new Date(today);
                         futureDate.setDate(today.getDate() + futureDays);
                         scheduledFor = futureDate.toISOString();
 
-                        // Increment quota to push next reviews further out
                         quotaUsed++;
                     }
                 }
