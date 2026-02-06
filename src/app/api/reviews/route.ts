@@ -144,8 +144,6 @@ export async function GET(request: NextRequest) {
         doneTodayMap[c.profileId] = c._count.id;
     });
 
-    const processedReviews = [];
-
     // Process each profile's queue
     for (const profileId in reviewsByProfile) {
         const profileReviews = reviewsByProfile[profileId];
