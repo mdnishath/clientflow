@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
-import { getClientScope, requireAdmin } from "@/lib/rbac";
+import { getClientScope, requireRole } from "@/lib/rbac";
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 
 // GET /api/reviews - List reviews (scoped by role)
 // ADMIN: sees all reviews
@@ -99,8 +100,21 @@ export async function GET(request: NextRequest) {
                     client: { select: { name: true } },
                     reviewLimit: true,
                     reviewsStartDate: true,
+                    reviewOrdered: true,
+                    _count: {
+                        select: {
+                            reviews: {
+                                where: {
+                                    status: { in: ["LIVE", "DONE"] },
+                                    isArchived: false
+                                }
+                            }
+                        }
+                    }
                 },
             },
+            createdBy: { select: { id: true, name: true } },
+            updatedBy: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: "asc" }, // Ascending needed for correct queue calculation
         take: 2000, // Safety cap
@@ -236,14 +250,19 @@ export async function GET(request: NextRequest) {
     });
 }
 
-// POST /api/reviews - Create a new review (ADMIN only)
+// POST /api/reviews - Create a new review (ADMIN or WORKER)
 export async function POST(request: NextRequest) {
-    const error = await requireAdmin();
+    const error = await requireRole(["ADMIN", "WORKER"]);
     if (error) return error;
 
     const scope = await getClientScope();
     if (!scope) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check create permission
+    if (!scope.canCreateReviews) {
+        return NextResponse.json({ error: "Forbidden - No create permission" }, { status: 403 });
     }
 
     try {
@@ -279,6 +298,7 @@ export async function POST(request: NextRequest) {
                 status: status || "PENDING",
                 dueDate: dueDate ? new Date(dueDate) : null,
                 notes: notes?.trim() || null,
+                createdById: scope.actualUserId, // Track who created this review
             },
             include: {
                 profile: {

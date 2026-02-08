@@ -45,6 +45,7 @@ const navigation: NavItem[] = [
     // Admin-only items  
     { name: "Clients", href: "/clients", icon: Users, adminOnly: true },
     { name: "Accounts", href: "/admin/accounts", icon: UserCog, adminOnly: true },
+    { name: "Workers", href: "/admin/workers", icon: Shield, adminOnly: true },
     { name: "Import Profiles", href: "/admin/profiles/import", icon: Upload, adminOnly: true },
 
     { name: "Categories", href: "/admin/categories", icon: FolderOpen, adminOnly: true },
@@ -103,11 +104,13 @@ export function Sidebar() {
                         flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium
                         ${isAdmin
                             ? "bg-amber-500/20 text-amber-400"
-                            : "bg-blue-500/20 text-blue-400"
+                            : role === "WORKER"
+                                ? "bg-purple-500/20 text-purple-400"
+                                : "bg-blue-500/20 text-blue-400"
                         }
                     `}>
                         {isAdmin ? <Shield size={14} /> : <User size={14} />}
-                        <span>{isAdmin ? "Admin" : "Client"}</span>
+                        <span>{isAdmin ? "Admin" : role === "WORKER" ? "Worker" : "Client"}</span>
                     </div>
                 </div>
 

@@ -2,8 +2,10 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { authConfig } from "@/lib/auth.config";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+    ...authConfig,
     providers: [
         Credentials({
             name: "credentials",
@@ -39,35 +41,63 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     name: user.name,
                     role: user.role,
                     clientId: user.clientId,
+                    parentAdminId: user.parentAdminId,
                     canDelete: user.canDelete,
+                    // Worker permissions
+                    canCreateReviews: user.canCreateReviews,
+                    canEditReviews: user.canEditReviews,
+                    canDeleteReviews: user.canDeleteReviews,
+                    canManageProfiles: user.canManageProfiles,
                 };
             },
         }),
     ],
     callbacks: {
-        async jwt({ token, user }) {
-            if (user) {
-                token.id = user.id;
-                token.role = user.role;
-                token.clientId = user.clientId;
-                token.canDelete = user.canDelete;
-            }
-            return token;
-        },
+        ...authConfig.callbacks,
         async session({ session, token }) {
-            if (session.user) {
-                session.user.id = token.id as string;
-                session.user.role = token.role as "ADMIN" | "CLIENT";
-                session.user.clientId = token.clientId as string | null;
-                session.user.canDelete = token.canDelete as boolean;
+            if (session.user && token.id) {
+                // Fetch fresh user data from DB to ensure permissions are up to date
+                // This fixes the issue where permission changes didn't reflect until re-login
+                const user = await prisma.user.findUnique({
+                    where: { id: token.id as string },
+                    select: {
+                        id: true,
+                        role: true,
+                        clientId: true,
+                        parentAdminId: true,
+                        canDelete: true,
+                        canCreateReviews: true,
+                        canEditReviews: true,
+                        canDeleteReviews: true,
+                        canManageProfiles: true,
+                    }
+                });
+
+                if (user) {
+                    session.user.id = user.id;
+                    session.user.role = user.role as "ADMIN" | "WORKER" | "CLIENT";
+                    session.user.clientId = user.clientId;
+                    session.user.parentAdminId = user.parentAdminId;
+                    session.user.canDelete = user.canDelete;
+                    // Worker permissions (fresh from DB)
+                    session.user.canCreateReviews = user.canCreateReviews ?? (user.role === "ADMIN");
+                    session.user.canEditReviews = user.canEditReviews ?? (user.role === "ADMIN");
+                    session.user.canDeleteReviews = user.canDeleteReviews ?? (user.role === "ADMIN");
+                    session.user.canManageProfiles = user.canManageProfiles ?? (user.role === "ADMIN");
+                } else {
+                    // Fallback to token if DB fetch fails (unlikely)
+                    session.user.id = token.id as string;
+                    session.user.role = token.role as "ADMIN" | "WORKER" | "CLIENT";
+                    session.user.clientId = token.clientId as string | null;
+                    session.user.parentAdminId = token.parentAdminId as string | null;
+                    session.user.canDelete = token.canDelete as boolean;
+                    session.user.canCreateReviews = token.canCreateReviews as boolean;
+                    session.user.canEditReviews = token.canEditReviews as boolean;
+                    session.user.canDeleteReviews = token.canDeleteReviews as boolean;
+                    session.user.canManageProfiles = token.canManageProfiles as boolean;
+                }
             }
             return session;
         },
-    },
-    pages: {
-        signIn: "/login",
-    },
-    session: {
-        strategy: "jwt",
     },
 });

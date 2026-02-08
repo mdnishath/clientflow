@@ -2,11 +2,17 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
 import { NextRequest, NextResponse } from "next/server";
+import { getClientScope } from "@/lib/rbac";
 
-// POST /api/profiles/bulk - Bulk archive profiles
+// POST /api/profiles/bulk - Bulk Archive/Restore
 export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const scope = await getClientScope();
+    if (!scope) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -15,74 +21,87 @@ export async function POST(request: NextRequest) {
         const { ids, action } = body;
 
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
-            return NextResponse.json(
-                { error: "Profile IDs are required" },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: "No IDs provided" }, { status: 400 });
         }
 
-        // Verify ownership of all profiles
-        const profiles = await prisma.gmbProfile.findMany({
-            where: {
-                id: { in: ids },
-                client: { userId: session.user.id },
-            },
-        });
+        // Validate permissions based on action
+        if (action === "archive") {
+            if (!scope.isAdmin && !scope.canDeleteProfiles) {
+                return NextResponse.json({ error: "Forbidden - No archive permission" }, { status: 403 });
+            }
 
-        if (profiles.length !== ids.length) {
-            return NextResponse.json(
-                { error: "Some profiles not found or unauthorized" },
-                { status: 403 }
-            );
-        }
+            const result = await prisma.gmbProfile.updateMany({
+                where: {
+                    id: { in: ids },
+                    // Ensure scope (client can only touch their own, admin/worker restricted by scope rules)
+                    ...(scope.isAdmin ? {} : { clientId: scope.clientId! })
+                },
+                data: { isArchived: true },
+            });
 
-        if (action === "restore") {
-            // Bulk restore
-            await prisma.gmbProfile.updateMany({
-                where: { id: { in: ids } },
+            await createNotification({
+                userId: session.user.id,
+                title: "Bulk Archive",
+                message: `Archived ${result.count} profiles`,
+                type: "warning",
+            });
+
+            return NextResponse.json({ success: true, count: result.count, action });
+
+        } else if (action === "restore") {
+            // Restore could be considered edit or delete(undo). Let's say Edit or Delete is enough?
+            // Usually restore is "undo archive", so same permission as archive is logical, or edit.
+            // ProfileCard uses can.deleteProfiles for restore. Let's stick to that.
+            if (!scope.isAdmin && !scope.canDeleteProfiles) {
+                return NextResponse.json({ error: "Forbidden - No restore permission" }, { status: 403 });
+            }
+
+            const result = await prisma.gmbProfile.updateMany({
+                where: {
+                    id: { in: ids },
+                    ...(scope.isAdmin ? {} : { clientId: scope.clientId! })
+                },
                 data: { isArchived: false },
             });
 
             await createNotification({
                 userId: session.user.id,
-                title: "Profiles Restored",
-                message: `${ids.length} profiles have been restored`,
+                title: "Bulk Restore",
+                message: `Restored ${result.count} profiles`,
                 type: "success",
-                link: "/admin/profiles",
             });
 
-            return NextResponse.json({ success: true, restored: ids.length });
+            return NextResponse.json({ success: true, count: result.count, action });
+        } else {
+            return NextResponse.json({ error: "Invalid action for POST. Use DELETE for deletion." }, { status: 400 });
         }
 
-        // Default: Bulk archive
-        await prisma.gmbProfile.updateMany({
-            where: { id: { in: ids } },
-            data: { isArchived: true },
-        });
-
-        await createNotification({
-            userId: session.user.id,
-            title: "Profiles Archived",
-            message: `${ids.length} profiles have been archived`,
-            type: "warning",
-            link: "/admin/profiles",
-        });
-
-        return NextResponse.json({ success: true, archived: ids.length });
     } catch (error) {
-        console.error("Bulk profile operation failed:", error);
-        return NextResponse.json(
-            { error: "Failed to process bulk operation" },
-            { status: 500 }
-        );
+        console.error("Bulk action error:", error);
+        return NextResponse.json({ error: "Failed to perform bulk action" }, { status: 500 });
     }
 }
 
-// DELETE /api/profiles/bulk - Bulk delete profiles
+// DELETE /api/profiles/bulk - Bulk Permanent Delete
 export async function DELETE(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const scope = await getClientScope();
+    if (!scope) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Permission Check
+    if (!scope.isAdmin && !scope.canDeleteProfiles) {
+        return NextResponse.json({ error: "Forbidden - No delete permission" }, { status: 403 });
+    }
+
+    // Explicit worker check
+    if (scope.isWorker && !scope.canDeleteProfiles) {
+        return NextResponse.json({ error: "Forbidden - Worker cannot delete profiles" }, { status: 403 });
     }
 
     try {
@@ -90,45 +109,26 @@ export async function DELETE(request: NextRequest) {
         const { ids } = body;
 
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
-            return NextResponse.json(
-                { error: "Profile IDs are required" },
-                { status: 400 }
-            );
+            return NextResponse.json({ error: "No IDs provided" }, { status: 400 });
         }
 
-        // Verify ownership of all profiles
-        const profiles = await prisma.gmbProfile.findMany({
+        const result = await prisma.gmbProfile.deleteMany({
             where: {
                 id: { in: ids },
-                client: { userId: session.user.id },
+                ...(scope.isAdmin ? {} : { clientId: scope.clientId! })
             },
-        });
-
-        if (profiles.length !== ids.length) {
-            return NextResponse.json(
-                { error: "Some profiles not found or unauthorized" },
-                { status: 403 }
-            );
-        }
-
-        // Permanent delete
-        await prisma.gmbProfile.deleteMany({
-            where: { id: { in: ids } },
         });
 
         await createNotification({
             userId: session.user.id,
-            title: "Profiles Deleted",
-            message: `${ids.length} profiles have been permanently deleted`,
+            title: "Bulk Delete",
+            message: `Permanently deleted ${result.count} profiles`,
             type: "error",
         });
 
-        return NextResponse.json({ success: true, deleted: ids.length });
+        return NextResponse.json({ success: true, count: result.count });
     } catch (error) {
-        console.error("Bulk profile delete failed:", error);
-        return NextResponse.json(
-            { error: "Failed to delete profiles" },
-            { status: 500 }
-        );
+        console.error("Bulk delete error:", error);
+        return NextResponse.json({ error: "Failed to perform bulk delete" }, { status: 500 });
     }
 }

@@ -14,7 +14,7 @@ class AutomationService {
   private queues = new Map<string, AutomationQueue>();
   private checker: LiveChecker;
   private isProcessing = false;
-  private defaultConcurrency = 3;
+  private defaultConcurrency = 5;
 
   constructor() {
     this.checker = new LiveChecker();

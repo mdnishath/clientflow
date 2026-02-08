@@ -62,7 +62,11 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { name, email, password, phone, notes } = body;
+        const {
+            name, email, password, phone, notes,
+            canCreateProfiles, canEditProfiles, canDeleteProfiles,
+            canCreateReviews, canEditReviews, canDeleteReviews
+        } = body;
 
         if (!name || !email || !password) {
             return NextResponse.json(
@@ -96,6 +100,13 @@ export async function POST(request: NextRequest) {
                     email,
                     phone: phone || null,
                     notes: notes || null,
+                    // Permissions (default false, but allow override if sent)
+                    canCreateProfiles: canCreateProfiles || false,
+                    canEditProfiles: canEditProfiles || false,
+                    canDeleteProfiles: canDeleteProfiles || false,
+                    canCreateReviews: canCreateReviews || false,
+                    canEditReviews: canEditReviews || false,
+                    canDeleteReviews: canDeleteReviews || false,
                 },
             });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Bell, Check, X, Inbox, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,9 +21,21 @@ interface Notification {
 }
 
 export function NotificationBell() {
+    const router = useRouter();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [isOpen, setIsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+
+    // Handle notification click - navigate if link exists
+    const handleNotificationClick = async (notification: Notification) => {
+        if (!notification.isRead) {
+            await markAsRead(notification.id);
+        }
+        if (notification.link) {
+            setIsOpen(false);
+            router.push(notification.link);
+        }
+    };
 
     // Fetch notifications from API
     const fetchNotifications = async () => {
@@ -192,7 +205,10 @@ export function NotificationBell() {
                                     }`}
                             >
                                 <div className="flex items-start justify-between gap-2">
-                                    <div className="flex-1 min-w-0">
+                                    <div
+                                        className={`flex-1 min-w-0 ${notification.link ? 'cursor-pointer' : ''}`}
+                                        onClick={() => handleNotificationClick(notification)}
+                                    >
                                         <div className="flex items-center gap-2">
                                             {!notification.isRead && (
                                                 <span className={`h-2 w-2 rounded-full ${getTypeColor(notification.type)} flex-shrink-0`} />

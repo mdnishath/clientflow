@@ -16,13 +16,19 @@ export interface Review {
     isArchived?: boolean;
     isScheduled?: boolean;
     scheduledFor?: string | null;
+    createdBy?: { id: string; name: string | null } | null;
+    updatedBy?: { id: string; name: string | null } | null;
     profile: {
         id: string;
         businessName: string;
         gmbLink: string | null;
         category?: string | null;
+        reviewOrdered?: number;
         client?: {
             name: string;
+        };
+        _count?: {
+            reviews: number;
         };
     };
 }
@@ -76,7 +82,7 @@ export const fetchReviews = createAsyncThunk(
         if (params.search) query.set("search", params.search);
         if (params.isArchived) query.set("archived", "true");
         query.set("page", (params.page || 1).toString());
-        query.set("limit", (params.limit || 10).toString());
+        query.set("limit", (params.limit || 20).toString());
 
         const res = await fetch(`/api/reviews?${query}`);
         if (!res.ok) {
@@ -128,6 +134,46 @@ const reviewsSlice = createSlice({
             const review = state.items.find((r) => r.id === action.payload.reviewId);
             if (review) {
                 review.status = action.payload.status;
+            }
+        },
+        // Optimistic update for edit (full review data)
+        optimisticUpdateReview: (
+            state,
+            action: PayloadAction<Partial<Review> & { id: string }>
+        ) => {
+            const index = state.items.findIndex((r) => r.id === action.payload.id);
+            if (index !== -1) {
+                state.items[index] = { ...state.items[index], ...action.payload };
+            }
+        },
+        // Optimistic delete (remove from list)
+        optimisticDeleteReview: (state, action: PayloadAction<string>) => {
+            state.items = state.items.filter((r) => r.id !== action.payload);
+            // Also update meta total
+            if (state.meta) {
+                state.meta.total = Math.max(0, state.meta.total - 1);
+                state.meta.totalPages = Math.ceil(state.meta.total / state.meta.limit);
+            }
+        },
+        // Revert delete (add back to list)
+        revertDeleteReview: (state, action: PayloadAction<Review>) => {
+            // Check if it already exists to avoid duplicates
+            if (state.items.some(r => r.id === action.payload.id)) {
+                return;
+            }
+            // Add back the review at the original position or start
+            state.items.unshift(action.payload);
+            if (state.meta) {
+                state.meta.total += 1;
+                state.meta.totalPages = Math.ceil(state.meta.total / state.meta.limit);
+            }
+        },
+        // Optimistic archive (mark as archived and remove from active list)
+        optimisticArchiveReview: (state, action: PayloadAction<string>) => {
+            state.items = state.items.filter((r) => r.id !== action.payload);
+            if (state.meta) {
+                state.meta.total = Math.max(0, state.meta.total - 1);
+                state.meta.totalPages = Math.ceil(state.meta.total / state.meta.limit);
             }
         },
         clearReviews: (state) => {
@@ -209,6 +255,10 @@ const reviewsSlice = createSlice({
 export const {
     optimisticStatusUpdate,
     revertStatusUpdate,
+    optimisticUpdateReview,
+    optimisticDeleteReview,
+    revertDeleteReview,
+    optimisticArchiveReview,
     clearReviews,
     startCheckingReviews,
     updateCheckStatus,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
+import { getClientScope } from "@/lib/rbac";
 
 interface CategoryWithStats {
     id: string;
@@ -21,8 +22,8 @@ interface CategoryWithStats {
 // GET /api/categories - List all categories
 export async function GET(request: NextRequest) {
     try {
-        const session = await auth();
-        if (!session?.user?.id) {
+        const scope = await getClientScope();
+        if (!scope) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -30,10 +31,10 @@ export async function GET(request: NextRequest) {
         const includeArchived = searchParams.get("includeArchived") === "true";
         const activeOnly = searchParams.get("activeOnly") === "true";
 
-        // Build where clause - only show current user's categories
+        // Build where clause - workers/clients see admin's categories via scope.userId
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const where: any = {
-            userId: session.user.id,
+            userId: scope.userId,
         };
 
         if (!includeArchived) {
@@ -57,10 +58,10 @@ export async function GET(request: NextRequest) {
             categories.map(async (cat) => {
                 const [templateCount, contextCount] = await Promise.all([
                     prisma.reviewTemplate.count({
-                        where: { userId: session.user.id, category: cat.slug }
+                        where: { userId: scope.userId, category: cat.slug }
                     }),
                     prisma.reviewContext.count({
-                        where: { userId: session.user.id, category: cat.slug }
+                        where: { userId: scope.userId, category: cat.slug }
                     })
                 ]);
                 return {

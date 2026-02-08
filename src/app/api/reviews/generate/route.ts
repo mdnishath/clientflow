@@ -136,6 +136,7 @@ export async function POST(request: NextRequest) {
                             reviewText,
                             status: "PENDING",
                             notes: useAdvanced ? `AI V2 (${language})` : `AI (${style})`,
+                            dueDate: new Date(),
                         },
                     });
                 })

@@ -31,9 +31,17 @@ import {
     ChevronLeft,
     ChevronRight,
     Pencil,
+    Trash2,
+    Archive,
+    ArchiveRestore,
+    CheckSquare,
+    Square,
+    Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { ProfileCard } from "@/components/profiles/profile-card";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Profile {
     id: string;
@@ -41,11 +49,13 @@ interface Profile {
     gmbLink: string | null;
     category: string | null;
     isArchived: boolean;
-    client: {
+    client?: {
         id: string;
         name: string;
     };
-    reviewCount: number;
+    reviewCount?: number;
+    reviewOrdered?: number;
+    liveCount?: number;
 }
 
 interface Category {
@@ -54,9 +64,63 @@ interface Category {
     slug: string;
 }
 
+interface Client {
+    id: string;
+    name: string;
+}
+
 export default function ProfilesPage() {
+    const { can, isAdmin } = useAuth();
     const [profiles, setProfiles] = useState<Profile[]>([]);
+
+    // Selection State
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+
+    const toggleSelection = (id: string) => {
+        const newSelected = new Set(selectedIds);
+        if (newSelected.has(id)) {
+            newSelected.delete(id);
+        } else {
+            newSelected.add(id);
+        }
+        setSelectedIds(newSelected);
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === profiles.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(profiles.map(p => p.id)));
+        }
+    };
+
+    const handleBulkAction = async (action: "archive" | "delete" | "restore") => {
+        if (!confirm(`Are you sure you want to ${action} ${selectedIds.size} profiles?`)) return;
+
+        try {
+            const res = await fetch("/api/profiles/bulk", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    ids: Array.from(selectedIds),
+                    action,
+                }),
+            });
+
+            if (res.ok) {
+                toast.success(`Profiles ${action}d successfully`);
+                setSelectedIds(new Set());
+                fetchProfiles();
+            } else {
+                toast.error("Failed to perform action");
+            }
+        } catch {
+            toast.error("Error performing action");
+        }
+    };
     const [categories, setCategories] = useState<Category[]>([]);
+    const [clients, setClients] = useState<Client[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("all");
@@ -74,8 +138,11 @@ export default function ProfilesPage() {
         businessName: "",
         gmbLink: "",
         category: "",
+        clientId: "",
         reviewLimit: "",
-        reviewsStartDate: "",
+        reviewsStartDate: new Date().toISOString().split("T")[0],
+        reviewOrdered: "",
+        autoCreateReviews: false,
     });
 
     const fetchProfiles = useCallback(async () => {
@@ -116,8 +183,22 @@ export default function ProfilesPage() {
         }
     };
 
+    const fetchClients = async () => {
+        try {
+            const res = await fetch("/api/clients?limit=100");
+            if (res.ok) {
+                const result = await res.json();
+                // API returns { data: [...], meta: {...} }
+                setClients(Array.isArray(result.data) ? result.data : []);
+            }
+        } catch {
+            console.error("Failed to load clients");
+        }
+    };
+
     useEffect(() => {
         fetchCategories();
+        fetchClients();
     }, []);
 
     useEffect(() => {
@@ -131,6 +212,10 @@ export default function ProfilesPage() {
     const handleCreateProfile = async () => {
         if (!newProfile.businessName.trim()) {
             toast.error("Business name is required");
+            return;
+        }
+        if (!newProfile.clientId) {
+            toast.error("Client is required");
             return;
         }
 
@@ -149,8 +234,11 @@ export default function ProfilesPage() {
                     businessName: "",
                     gmbLink: "",
                     category: "",
+                    clientId: "",
                     reviewLimit: "",
-                    reviewsStartDate: "",
+                    reviewsStartDate: new Date().toISOString().split("T")[0],
+                    reviewOrdered: "",
+                    autoCreateReviews: false,
                 });
                 fetchProfiles();
             } else {
@@ -161,6 +249,58 @@ export default function ProfilesPage() {
             toast.error("Failed to create profile");
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const handleArchiveProfile = async (profile: Profile) => {
+        if (!confirm(`Are you sure you want to archive "${profile.businessName}"?`)) return;
+        try {
+            const res = await fetch(`/api/profiles/${profile.id}`, {
+                method: "DELETE",
+            });
+            if (res.ok) {
+                toast.success("Profile archived");
+                fetchProfiles();
+            } else {
+                toast.error("Failed to archive profile");
+            }
+        } catch {
+            toast.error("Error archiving profile");
+        }
+    };
+
+    const handleRestoreProfile = async (profile: Profile) => {
+        try {
+            const res = await fetch(`/api/profiles/${profile.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isArchived: false }),
+            });
+            if (res.ok) {
+                toast.success("Profile restored");
+                fetchProfiles();
+            } else {
+                toast.error("Failed to restore profile");
+            }
+        } catch {
+            toast.error("Error restoring profile");
+        }
+    };
+
+    const handleDeleteProfile = async (profile: Profile) => {
+        if (!confirm(`Are you sure you want to PERMANENTLY delete "${profile.businessName}"? This cannot be undone.`)) return;
+        try {
+            const res = await fetch(`/api/profiles/${profile.id}?permanent=true`, {
+                method: "DELETE",
+            });
+            if (res.ok) {
+                toast.success("Profile deleted permanently");
+                fetchProfiles();
+            } else {
+                toast.error("Failed to delete profile");
+            }
+        } catch {
+            toast.error("Error deleting profile");
         }
     };
 
@@ -177,14 +317,81 @@ export default function ProfilesPage() {
                         Manage your Google My Business profiles
                     </p>
                 </div>
-                <Button
-                    onClick={() => setIsDialogOpen(true)}
-                    className="bg-indigo-600 hover:bg-indigo-700"
-                >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Profile
-                </Button>
             </div>
+            <div className="flex items-center gap-2">
+                {isAdmin && (
+                    <Link href="/profiles/import">
+                        <Button
+                            variant="outline"
+                            className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10"
+                        >
+                            <Upload className="mr-2 h-4 w-4" />
+                            Import
+                        </Button>
+                    </Link>
+                )}
+                {isAdmin && (
+                    <Button
+                        variant={isSelectionMode ? "secondary" : "outline"}
+                        onClick={() => {
+                            setIsSelectionMode(!isSelectionMode);
+                            setSelectedIds(new Set());
+                        }}
+                        className="border-slate-600 text-slate-300"
+                    >
+                        {isSelectionMode ? "Cancel Selection" : "Select Profiles"}
+                    </Button>
+                )}
+                {can.addProfiles && (
+                    <Button
+                        onClick={() => setIsDialogOpen(true)}
+                        className="bg-indigo-600 hover:bg-indigo-700"
+                    >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Profile
+                    </Button>
+                )}
+            </div>
+
+
+            {/* Bulk Action Bar - Sticky if selection active */}
+            {
+                isSelectionMode && selectedIds.size > 0 && isAdmin && (
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 p-4 rounded-lg shadow-xl z-50 flex items-center gap-4 animate-in slide-in-from-bottom-5 fade-in">
+                        <span className="text-white font-medium">
+                            {selectedIds.size} selected
+                        </span>
+                        <div className="h-6 w-px bg-slate-700" />
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleBulkAction("archive")}
+                            className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10"
+                        >
+                            <Archive className="mr-2 h-4 w-4" />
+                            Archive
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleBulkAction("delete")}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                        >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                        </Button>
+                        <div className="h-6 w-px bg-slate-700" />
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedIds(new Set())}
+                            className="text-slate-400 hover:text-white"
+                        >
+                            Clear
+                        </Button>
+                    </div>
+                )
+            }
 
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -225,158 +432,124 @@ export default function ProfilesPage() {
             </div>
 
             {/* Filters */}
-            <div className="flex flex-wrap gap-4">
-                <div className="relative flex-1 min-w-[200px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <Input
-                        placeholder="Search by business name..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="pl-10 bg-slate-800 border-slate-700 text-white"
-                    />
+            <div className="flex flex-col gap-4">
+                {/* Admin Selection Toolbar */}
+                {isAdmin && isSelectionMode && (
+                    <div className="flex items-center gap-2 p-2 bg-slate-800/30 rounded border border-slate-700/50 w-full sm:w-auto self-start">
+                        <Button variant="ghost" size="sm" onClick={toggleSelectAll} className="text-indigo-400 hover:bg-slate-700">
+                            {selectedIds.size === profiles.length && profiles.length > 0 ? "Deselect All" : "Select All"}
+                        </Button>
+                        <span className="text-slate-400 text-sm">{selectedIds.size} of {profiles.length} selected</span>
+                    </div>
+                )}
+                <div className="flex flex-wrap gap-4">
+                    <div className="relative flex-1 min-w-[200px]">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <Input
+                            placeholder="Search by business name..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="pl-10 bg-slate-800 border-slate-700 text-white"
+                        />
+                    </div>
+                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                        <SelectTrigger className="w-[180px] bg-slate-800 border-slate-700 text-white">
+                            <SelectValue placeholder="All Categories" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                            <SelectItem value="all">All Categories</SelectItem>
+                            {categories.map((cat) => (
+                                <SelectItem key={cat.id} value={cat.slug}>
+                                    {cat.name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className="w-[180px] bg-slate-800 border-slate-700 text-white">
-                        <SelectValue placeholder="All Categories" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-700">
-                        <SelectItem value="all">All Categories</SelectItem>
-                        {categories.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.slug}>
-                                {cat.name}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+
             </div>
 
             {/* Loading */}
-            {loading ? (
-                <div className="flex items-center justify-center min-h-[300px]">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-            ) : profiles.length === 0 ? (
-                <Card className="bg-slate-800/50 border-slate-700">
-                    <CardContent className="flex flex-col items-center justify-center py-12">
-                        <Store className="h-12 w-12 text-slate-500 mb-4" />
-                        <h3 className="text-lg font-semibold mb-2 text-white">
-                            No profiles found
-                        </h3>
-                        <p className="text-slate-400 mb-4">
-                            Get started by adding your first GMB profile
-                        </p>
-                        <Button
-                            onClick={() => setIsDialogOpen(true)}
-                            className="bg-indigo-600 hover:bg-indigo-700"
-                        >
-                            <Plus className="mr-2 h-4 w-4" />
-                            Add Profile
-                        </Button>
-                    </CardContent>
-                </Card>
-            ) : (
-                <>
-                    {/* Profiles Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {profiles.map((profile) => (
-                            <Card
-                                key={profile.id}
-                                className="bg-slate-800/50 border-slate-700 hover:border-slate-600 transition-colors"
-                            >
-                                <CardContent className="p-4">
-                                    <div className="flex items-start justify-between mb-3">
-                                        <div className="flex-1">
-                                            <h3 className="font-semibold text-white">
-                                                {profile.businessName}
-                                            </h3>
-                                            <p className="text-sm text-slate-400">
-                                                {profile.client.name}
-                                            </p>
-                                        </div>
-                                        {profile.gmbLink && (
-                                            <a
-                                                href={profile.gmbLink}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-slate-400 hover:text-indigo-400"
-                                            >
-                                                <ExternalLink className="h-4 w-4" />
-                                            </a>
-                                        )}
-                                    </div>
-
-                                    <div className="flex items-center gap-2 mb-3">
-                                        {profile.category ? (
-                                            <Badge
-                                                variant="outline"
-                                                className="text-slate-300 border-slate-600"
-                                            >
-                                                {profile.category}
-                                            </Badge>
-                                        ) : (
-                                            <Badge
-                                                variant="outline"
-                                                className="text-slate-500 border-slate-700"
-                                            >
-                                                No category
-                                            </Badge>
-                                        )}
-                                        <Badge className="bg-indigo-600/20 text-indigo-400 border-indigo-500/30">
-                                            <Star className="h-3 w-3 mr-1" />
-                                            {profile.reviewCount || 0} reviews
-                                        </Badge>
-                                    </div>
-
-                                    <div className="flex gap-2">
-                                        <Link href={`/profiles/${profile.id}`} className="flex-1">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="w-full border-slate-600 text-slate-300 hover:bg-slate-700"
-                                            >
-                                                View Reviews
-                                            </Button>
-                                        </Link>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
+            {
+                loading ? (
+                    <div className="flex items-center justify-center min-h-[300px]">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                     </div>
-
-                    {/* Pagination */}
-                    {totalPages > 1 && (
-                        <div className="flex items-center justify-between">
-                            <p className="text-sm text-slate-400">
-                                Showing {(page - 1) * limit + 1} - {Math.min(page * limit, total)} of{" "}
-                                {total}
+                ) : profiles.length === 0 ? (
+                    <Card className="bg-slate-800/50 border-slate-700">
+                        <CardContent className="flex flex-col items-center justify-center py-12">
+                            <Store className="h-12 w-12 text-slate-500 mb-4" />
+                            <h3 className="text-lg font-semibold mb-2 text-white">
+                                No profiles found
+                            </h3>
+                            <p className="text-slate-400 mb-4">
+                                Get started by adding your first GMB profile
                             </p>
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                    disabled={page === 1}
-                                    className="border-slate-600 text-slate-300 hover:bg-slate-700"
-                                >
-                                    <ChevronLeft className="h-4 w-4" />
-                                </Button>
-                                <span className="text-sm text-slate-300">
-                                    Page {page} of {totalPages}
-                                </span>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                                    disabled={page >= totalPages}
-                                    className="border-slate-600 text-slate-300 hover:bg-slate-700"
-                                >
-                                    <ChevronRight className="h-4 w-4" />
-                                </Button>
-                            </div>
+                            <Button
+                                onClick={() => setIsDialogOpen(true)}
+                                className="bg-indigo-600 hover:bg-indigo-700"
+                            >
+                                <Plus className="mr-2 h-4 w-4" />
+                                Add Profile
+                            </Button>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <>
+                        {/* Profiles Grid - Unified ProfileCard */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {profiles.map((profile) => (
+                                <ProfileCard
+                                    key={profile.id}
+                                    profile={profile}
+                                    isSelected={selectedIds.has(profile.id)}
+                                    onToggleSelect={() => toggleSelection(profile.id)}
+                                    showClientName={true}
+                                    onArchive={can.deleteProfiles ? handleArchiveProfile : undefined}
+                                    onRestore={can.deleteProfiles ? handleRestoreProfile : undefined}
+                                    onDelete={can.deleteProfiles ? handleDeleteProfile : undefined}
+                                    isAdmin={isAdmin}
+                                />
+                            ))}
                         </div>
-                    )}
-                </>
-            )}
+
+                        {/* Pagination */}
+                        {
+                            totalPages > 1 && (
+                                <div className="flex items-center justify-between">
+                                    <p className="text-sm text-slate-400">
+                                        Showing {(page - 1) * limit + 1} - {Math.min(page * limit, total)} of{" "}
+                                        {total}
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                            disabled={page === 1}
+                                            className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                                        >
+                                            <ChevronLeft className="h-4 w-4" />
+                                        </Button>
+                                        <span className="text-sm text-slate-300">
+                                            Page {page} of {totalPages}
+                                        </span>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                                            disabled={page >= totalPages}
+                                            className="border-slate-600 text-slate-300 hover:bg-slate-700"
+                                        >
+                                            <ChevronRight className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            )
+                        }
+                    </>
+                )
+            }
 
             {/* Create Profile Dialog */}
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -417,6 +590,33 @@ export default function ProfilesPage() {
                             />
                         </div>
                         <div className="space-y-2">
+                            <Label htmlFor="clientId" className="text-slate-300">
+                                Client <span className="text-red-400">*</span>
+                            </Label>
+                            <Select
+                                value={newProfile.clientId}
+                                onValueChange={(val) =>
+                                    setNewProfile({ ...newProfile, clientId: val })
+                                }
+                            >
+                                <SelectTrigger className="bg-slate-900 border-slate-600 text-white">
+                                    <SelectValue placeholder="Select client" />
+                                </SelectTrigger>
+                                <SelectContent className="bg-slate-800 border-slate-700">
+                                    {clients?.length === 0 && (
+                                        <SelectItem value="__no_clients__" disabled>
+                                            No clients available
+                                        </SelectItem>
+                                    )}
+                                    {clients?.map((client) => (
+                                        <SelectItem key={client.id} value={client.id}>
+                                            {client.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-2">
                             <Label htmlFor="category" className="text-slate-300">
                                 Category
                             </Label>
@@ -438,10 +638,26 @@ export default function ProfilesPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="reviewOrdered" className="text-slate-300">
+                                    Reviews Ordered
+                                </Label>
+                                <Input
+                                    id="reviewOrdered"
+                                    type="number"
+                                    min="0"
+                                    value={newProfile.reviewOrdered}
+                                    onChange={(e) =>
+                                        setNewProfile({ ...newProfile, reviewOrdered: e.target.value })
+                                    }
+                                    placeholder="e.g. 10"
+                                    className="bg-slate-900 border-slate-600 text-white"
+                                />
+                            </div>
                             <div className="space-y-2">
                                 <Label htmlFor="reviewLimit" className="text-slate-300">
-                                    Daily Review Limit
+                                    Daily Limit
                                 </Label>
                                 <Input
                                     id="reviewLimit"
@@ -470,6 +686,23 @@ export default function ProfilesPage() {
                                 />
                             </div>
                         </div>
+                        {/* Auto-create checkbox - only show when reviewOrdered has a value */}
+                        {newProfile.reviewOrdered && parseInt(newProfile.reviewOrdered) > 0 && (
+                            <div className="flex items-center space-x-2 pt-2">
+                                <input
+                                    type="checkbox"
+                                    id="autoCreateReviews"
+                                    checked={newProfile.autoCreateReviews}
+                                    onChange={(e) =>
+                                        setNewProfile({ ...newProfile, autoCreateReviews: e.target.checked })
+                                    }
+                                    className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <Label htmlFor="autoCreateReviews" className="text-slate-300 text-sm cursor-pointer">
+                                    Auto-create {newProfile.reviewOrdered} pending reviews
+                                </Label>
+                            </div>
+                        )}
                     </div>
                     <DialogFooter>
                         <Button
@@ -496,6 +729,6 @@ export default function ProfilesPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 }

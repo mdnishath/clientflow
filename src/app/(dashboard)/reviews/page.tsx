@@ -41,12 +41,17 @@ import { PaginationControls } from "@/components/ui/pagination-controls";
 import { CopyButton } from "@/components/ui/copy-button";
 import { ExportButton } from "@/components/reviews/export-button";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
     fetchReviews,
     updateReviewStatus,
     optimisticStatusUpdate,
     revertStatusUpdate,
+    optimisticUpdateReview,
+    optimisticDeleteReview,
+    revertDeleteReview,
+    optimisticArchiveReview,
     type Review,
 } from "@/lib/features/reviewsSlice";
 
@@ -141,7 +146,9 @@ function ReviewActionButtons({
     );
 }
 
+
 export default function ReviewsPage() {
+    const { can } = useAuth();
     const dispatch = useAppDispatch();
     const { items: reviews, meta, loading } = useAppSelector((state) => state.reviews);
     const { data: session } = useSession();
@@ -165,6 +172,14 @@ export default function ReviewsPage() {
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
     const [editingReview, setEditingReview] = useState<Review | null>(null);
+
+    // Worker stats for progress bar
+    const [myStats, setMyStats] = useState<{
+        today: { updated: number; live: number };
+        teamToday: { total: number; live: number; pending: number };
+        totalCreated: number;
+        totalUpdated: number;
+    } | null>(null);
 
     const isLoading = loading === "pending";
 
@@ -199,6 +214,13 @@ export default function ReviewsPage() {
                     setCategories(categoriesData);
                     setProfiles(profilesData);
                 }
+
+                // Fetch my performance stats
+                const statsRes = await fetch("/api/me/stats");
+                if (statsRes.ok) {
+                    const statsData = await statsRes.json();
+                    setMyStats(statsData);
+                }
             } catch (error) {
                 console.error("Error fetching filter options:", error);
             }
@@ -218,8 +240,21 @@ export default function ReviewsPage() {
             profileId?: string;
             status?: string;
             search?: string;
+            profile?: {
+                id: string;
+                businessName: string;
+                gmbLink: string | null;
+                category?: string | null;
+                reviewOrdered?: number;
+                client?: {
+                    name: string;
+                };
+                _count?: {
+                    reviews: number;
+                };
+            };
             isArchived?: boolean;
-        } = { page, limit: 10 };
+        } = { page, limit: 20 };
 
         if (clientFilter !== "all") params.clientId = clientFilter;
         if (categoryFilter !== "all") params.category = categoryFilter;
@@ -241,26 +276,111 @@ export default function ReviewsPage() {
         fetchReviewsData();
     }, [fetchReviewsData]);
 
-    // Optimistic status change (like profile page)
+    // Optimistic status change with filter-aware removal
+    // When status changes and new status doesn't match current filter, item smoothly disappears
     const handleStatusChange = async (reviewId: string, newStatus: string) => {
         const review = reviews.find((r) => r.id === reviewId);
         if (!review) return;
 
         const oldStatus = review.status;
 
+        // Check if new status will still match the current filter
+        const willMatchFilter = statusFilter === "all" || newStatus === statusFilter;
+
         // Optimistic update - smooth, no blink
         dispatch(optimisticStatusUpdate({ reviewId, status: newStatus }));
+
+        // Optimistic progress bar update
+        setMyStats((prev) => {
+            if (!prev) return prev;
+
+            // Track PENDING → LIVE conversion
+            const wasPending = oldStatus === "PENDING";
+            const isNowLive = newStatus === "LIVE";
+
+            return {
+                ...prev,
+                today: {
+                    updated: prev.today.updated + 1,
+                    live: newStatus === "LIVE" ? prev.today.live + 1 : prev.today.live,
+                },
+                teamToday: {
+                    ...prev.teamToday,
+                    live: isNowLive ? prev.teamToday.live + 1 : prev.teamToday.live,
+                    pending: wasPending && isNowLive ? prev.teamToday.pending - 1 : prev.teamToday.pending,
+                },
+                totalUpdated: prev.totalUpdated + 1,
+            };
+        });
+
+        // If new status doesn't match filter, smoothly remove from list
+        if (!willMatchFilter) {
+            // Small delay for smooth transition
+            setTimeout(() => {
+                dispatch(optimisticDeleteReview(reviewId));
+            }, 300);
+        }
 
         try {
             const result = await dispatch(updateReviewStatus({ reviewId, status: newStatus }));
             if (updateReviewStatus.fulfilled.match(result)) {
                 toast.success(`Status updated to ${statusConfig[newStatus]?.label}`);
             } else {
+                // Revert status
                 dispatch(revertStatusUpdate({ reviewId, status: oldStatus }));
+                // Revert progress bar
+                setMyStats((prev) => {
+                    if (!prev) return prev;
+
+                    const wasPending = oldStatus === "PENDING";
+                    const wasLive = newStatus === "LIVE";
+
+                    return {
+                        ...prev,
+                        today: {
+                            updated: prev.today.updated - 1,
+                            live: wasLive ? prev.today.live - 1 : prev.today.live,
+                        },
+                        teamToday: {
+                            ...prev.teamToday,
+                            live: wasLive ? prev.teamToday.live - 1 : prev.teamToday.live,
+                            pending: wasPending && wasLive ? prev.teamToday.pending + 1 : prev.teamToday.pending,
+                        },
+                        totalUpdated: prev.totalUpdated - 1,
+                    };
+                });
+                // Revert removal if we removed it
+                if (!willMatchFilter) {
+                    dispatch(revertDeleteReview(review));
+                }
                 toast.error("Failed to update status");
             }
         } catch {
             dispatch(revertStatusUpdate({ reviewId, status: oldStatus }));
+            // Revert progress bar
+            setMyStats((prev) => {
+                if (!prev) return prev;
+
+                const wasPending = oldStatus === "PENDING";
+                const wasLive = newStatus === "LIVE";
+
+                return {
+                    ...prev,
+                    today: {
+                        updated: prev.today.updated - 1,
+                        live: wasLive ? prev.today.live - 1 : prev.today.live,
+                    },
+                    teamToday: {
+                        ...prev.teamToday,
+                        live: wasLive ? prev.teamToday.live - 1 : prev.teamToday.live,
+                        pending: wasPending && wasLive ? prev.teamToday.pending + 1 : prev.teamToday.pending,
+                    },
+                    totalUpdated: prev.totalUpdated - 1,
+                };
+            });
+            if (!willMatchFilter) {
+                dispatch(revertDeleteReview(review));
+            }
             toast.error("Failed to update status");
         }
     };
@@ -282,49 +402,57 @@ export default function ReviewsPage() {
         }
     };
 
-    // Bulk archive
+    // Bulk archive (optimistic)
     const handleBulkArchive = async () => {
         if (selectedIds.length === 0) return;
         if (!confirm(`Archive ${selectedIds.length} review(s)?`)) return;
 
-        setIsBulkProcessing(true);
+        // Save current items for potential rollback
+        const itemsToArchive = reviews.filter(r => selectedIds.includes(r.id));
+
+        // Optimistic: immediately remove from UI
+        selectedIds.forEach(id => dispatch(optimisticArchiveReview(id)));
+        setSelectedIds([]);
+        toast.success(`${itemsToArchive.length} review(s) archived`);
+
         try {
             await Promise.all(
-                selectedIds.map((id) =>
-                    fetch(`/api/reviews/${id}`, { method: "DELETE" })
+                itemsToArchive.map((review) =>
+                    fetch(`/api/reviews/${review.id}`, { method: "DELETE" })
                 )
             );
-            toast.success(`${selectedIds.length} review(s) archived`);
-            setSelectedIds([]);
-            fetchReviewsData();
         } catch (error) {
             console.error("Bulk archive error:", error);
-            toast.error("Failed to archive");
-        } finally {
-            setIsBulkProcessing(false);
+            toast.error("Archive failed - restoring items");
+            // Rollback: add items back
+            itemsToArchive.forEach(review => dispatch(revertDeleteReview(review)));
         }
     };
 
-    // Bulk delete permanently
+    // Bulk delete permanently (optimistic)
     const handleBulkDelete = async () => {
         if (selectedIds.length === 0) return;
         if (!confirm(`PERMANENTLY delete ${selectedIds.length} review(s)? This cannot be undone!`)) return;
 
-        setIsBulkProcessing(true);
+        // Save current items for potential rollback
+        const itemsToDelete = reviews.filter(r => selectedIds.includes(r.id));
+
+        // Optimistic: immediately remove from UI
+        selectedIds.forEach(id => dispatch(optimisticDeleteReview(id)));
+        setSelectedIds([]);
+        toast.success(`${itemsToDelete.length} review(s) permanently deleted`);
+
         try {
             await Promise.all(
-                selectedIds.map((id) =>
-                    fetch(`/api/reviews/${id}?permanent=true`, { method: "DELETE" })
+                itemsToDelete.map((review) =>
+                    fetch(`/api/reviews/${review.id}?permanent=true`, { method: "DELETE" })
                 )
             );
-            toast.success(`${selectedIds.length} review(s) permanently deleted`);
-            setSelectedIds([]);
-            fetchReviewsData();
         } catch (error) {
             console.error("Bulk delete error:", error);
-            toast.error("Failed to delete");
-        } finally {
-            setIsBulkProcessing(false);
+            toast.error("Delete failed - restoring items");
+            // Rollback: add items back
+            itemsToDelete.forEach(review => dispatch(revertDeleteReview(review)));
         }
     };
 
@@ -364,8 +492,18 @@ export default function ReviewsPage() {
         setIsFormOpen(true);
     };
 
-    const handleReviewSuccess = () => {
-        fetchReviewsData();
+    // Optimistic success handler - receives updated review data from form
+    const handleReviewSuccess = (updatedReview?: Review) => {
+        if (updatedReview && editingReview) {
+            // Optimistic update - instantly update the UI
+            dispatch(optimisticUpdateReview(updatedReview));
+            toast.success("Review updated!");
+        } else {
+            // For new reviews, we need to refetch
+            fetchReviewsData();
+        }
+        setIsFormOpen(false);
+        setEditingReview(null);
     };
 
     const allPageSelected = reviews.length > 0 && reviews.every((r) => selectedIds.includes(r.id));
@@ -385,23 +523,58 @@ export default function ReviewsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                     <ExportButton />
-                    <Button
-                        onClick={() => setIsGeneratorOpen(true)}
-                        variant="outline"
-                        className="border-slate-700 text-slate-300 hover:text-white"
-                    >
-                        <Sparkles size={16} className="mr-2" />
-                        Generate
-                    </Button>
-                    <Button
-                        onClick={handleAddReview}
-                        className="bg-indigo-600 hover:bg-indigo-700"
-                    >
-                        <Plus size={16} className="mr-2" />
-                        Add Review
-                    </Button>
+                    {can.createReviews && (
+                        <>
+                            <Button
+                                onClick={() => setIsGeneratorOpen(true)}
+                                variant="outline"
+                                className="border-slate-700 text-slate-300 hover:text-white"
+                            >
+                                <Sparkles size={16} className="mr-2" />
+                                Generate
+                            </Button>
+                            <Button
+                                onClick={handleAddReview}
+                                className="bg-indigo-600 hover:bg-indigo-700"
+                            >
+                                <Plus size={16} className="mr-2" />
+                                Add Review
+                            </Button>
+                        </>
+                    )}
                 </div>
             </div>
+
+            {/* Worker Progress Bar - All Roles (Not just workers) */}
+            {myStats && (
+                <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-slate-300">
+                            Today&apos;s Progress
+                        </span>
+                        <span className="text-sm text-slate-400">
+                            {myStats.teamToday?.live ?? 0} / {(myStats.teamToday?.pending ?? 0) + (myStats.teamToday?.live ?? 0)} LIVE today
+                        </span>
+                    </div>
+                    <div className="w-full bg-slate-700 rounded-full h-2.5 mb-3">
+                        {/* Calculate: live / (pending + live) = % of initially pending that are now live */}
+                        <div
+                            className="bg-gradient-to-r from-indigo-500 to-green-500 h-2.5 rounded-full transition-all duration-300"
+                            style={{
+                                width: `${(() => {
+                                    const initialPending = (myStats.teamToday?.pending ?? 0) + (myStats.teamToday?.live ?? 0);
+                                    if (initialPending === 0) return 0;
+                                    return Math.min(100, ((myStats.teamToday?.live ?? 0) / initialPending) * 100);
+                                })()}%`
+                            }}
+                        />
+                    </div>
+                    <div className="flex justify-between text-xs text-slate-400">
+                        <span>📝 My Created: {myStats.totalCreated}</span>
+                        <span>✏️ My Updated: {myStats.totalUpdated}</span>
+                    </div>
+                </div>
+            )}
 
             {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -623,9 +796,38 @@ export default function ReviewsPage() {
                                                     <h3 className="font-medium text-white truncate">
                                                         {review.profile.businessName}
                                                     </h3>
-                                                    {review.profile.client && (
+                                                    {/* Profile Progress: reviewOrdered / (reviewOrdered - total LIVE reviews) */}
+                                                    {review.profile.reviewOrdered && review.profile.reviewOrdered > 0 && (
+                                                        <div className="flex items-center gap-2 text-xs">
+                                                            <div className="w-20 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-300"
+                                                                    style={{
+                                                                        width: `${Math.min(100, ((review.profile._count?.reviews || 0) / review.profile.reviewOrdered) * 100)}%`
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                            <span className="text-slate-400 whitespace-nowrap">
+                                                                {review.profile._count?.reviews || 0}/{review.profile.reviewOrdered}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    {/* Attribution - show createdBy/updatedBy based on status */}
+                                                    {review.status === "LIVE" && review.updatedBy?.name ? (
+                                                        <span className="text-green-400 text-xs">
+                                                            Live by {review.updatedBy.name}
+                                                        </span>
+                                                    ) : review.status === "APPLIED" && review.updatedBy?.name ? (
+                                                        <span className="text-purple-400 text-xs">
+                                                            Applied by {review.updatedBy.name}
+                                                        </span>
+                                                    ) : review.updatedBy?.name ? (
                                                         <span className="text-slate-500 text-xs">
-                                                            by {review.profile.client.name}
+                                                            Updated by {review.updatedBy.name}
+                                                        </span>
+                                                    ) : review.createdBy?.name && (
+                                                        <span className="text-slate-500 text-xs">
+                                                            Created by {review.createdBy.name}
                                                         </span>
                                                     )}
                                                     {review.profile.category && (
@@ -711,24 +913,27 @@ export default function ReviewsPage() {
                                                 status={review.status}
                                             />
 
-                                            {/* Edit Button */}
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleEditReview(review)}
-                                                className="text-slate-400 hover:text-white h-9 px-3"
-                                                title="Edit Review"
-                                            >
-                                                <Pencil size={14} />
-                                            </Button>
+                                            {/* Edit Button - Gated */}
+                                            {can.editReviews && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleEditReview(review)}
+                                                    className="text-slate-400 hover:text-white h-9 px-3"
+                                                    title="Edit Review"
+                                                >
+                                                    <Pencil size={14} />
+                                                </Button>
+                                            )}
 
-                                            {/* Status Dropdown */}
+                                            {/* Status Dropdown - Gated */}
                                             <Select
                                                 value={review.status}
                                                 onValueChange={(val) => handleStatusChange(review.id, val)}
+                                                disabled={!can.editReviews}
                                             >
                                                 <SelectTrigger
-                                                    className={`w-[140px] ${statusConfig[review.status]?.color || "bg-slate-600"} border-0 text-white font-medium transition-all duration-300`}
+                                                    className={`w-[140px] ${statusConfig[review.status]?.color || "bg-slate-600"} border-0 text-white font-medium transition-all duration-300 ${!can.editReviews ? "opacity-70 cursor-not-allowed" : ""}`}
                                                 >
                                                     <span className="flex items-center gap-2">
                                                         {statusConfig[review.status]?.icon}

@@ -17,6 +17,7 @@ datasource db {
 // User roles for Role-Based Access Control (RBAC)
 enum Role {
   ADMIN   // Full system access - can manage users, reviews, and all settings
+  WORKER  // Limited admin - works under an admin, restricted permissions
   CLIENT  // Limited access - can manage own reviews and data only
 }
 
@@ -55,13 +56,28 @@ model User {
   ownedClients     Client[]  @relation("AdminClients") // Clients created by admin
   linkedClient     Client?   @relation("ClientAccount", fields: [clientId], references: [id])
   tags             Tag[]
-  reviews          Review[]
+  reviews          Review[]  @relation("UserReviews")
+  reviewsCreated   Review[]  @relation("ReviewsCreatedBy")
+  reviewsUpdated   Review[]  @relation("ReviewsUpdatedBy")
   reviewTemplates  ReviewTemplate[]
   reviewContexts   ReviewContext[]
   notifications    Notification[]
   categories       Category[]
+  profilesCreated  GmbProfile[] @relation("ProfilesCreatedBy")
+
+  // Worker hierarchy: Workers work under an Admin
+  parentAdminId    String?   @map("parent_admin_id")
+  parentAdmin      User?     @relation("AdminWorkers", fields: [parentAdminId], references: [id])
+  workers          User[]    @relation("AdminWorkers")
+
+  // Worker permissions (only applies to WORKER role)
+  canCreateReviews  Boolean  @default(true) @map("can_create_reviews")
+  canEditReviews    Boolean  @default(true) @map("can_edit_reviews")
+  canDeleteReviews  Boolean  @default(false) @map("can_delete_reviews")
+  canManageProfiles Boolean  @default(false) @map("can_manage_profiles")
 
   @@index([clientId])
+  @@index([parentAdminId])
   @@map("users")
 }
 
@@ -76,6 +92,14 @@ model Client {
   isArchived   Boolean  @default(false) @map("is_archived")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Permissions
+  canCreateProfiles Boolean @default(false) @map("can_create_profiles")
+  canEditProfiles   Boolean @default(false) @map("can_edit_profiles")
+  canDeleteProfiles Boolean @default(false) @map("can_delete_profiles")
+  canCreateReviews  Boolean @default(false) @map("can_create_reviews")
+  canEditReviews    Boolean @default(false) @map("can_edit_reviews")
+  canDeleteReviews  Boolean @default(false) @map("can_delete_reviews")
 
   // Relations
   adminUser    User         @relation("AdminClients", fields: [userId], references: [id], onDelete: Cascade)
@@ -102,13 +126,21 @@ model GmbProfile {
   reviewLimit      Int?     @map("review_limit")       // Max live reviews per day
   reviewsStartDate DateTime? @map("reviews_start_date") // Start date for counting
 
+  // Order Tracking
+  reviewOrdered    Int      @default(0) @map("review_ordered") // Ordered review count
+
+  // Attribution
+  createdById      String?  @map("created_by_id")
+
   // Relations
   client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
   reviews   Review[]
+  createdBy User?    @relation("ProfilesCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([clientId])
   @@index([category])
   @@index([isArchived])
+  @@index([createdById])
   @@map("gmb_profiles")
 }
 
@@ -128,15 +160,21 @@ model Review {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
+  // Attribution tracking
+  createdById    String?      @map("created_by_id")
+  updatedById    String?      @map("updated_by_id")
+
   // Live Check Automation Fields
   lastCheckedAt  DateTime?    @map("last_checked_at")
   checkStatus    String?      @map("check_status") // "LIVE", "MISSING", "ERROR", "CHECKING"
   screenshotPath String?      @map("screenshot_path")
 
   // Relations
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User        @relation("UserReviews", fields: [userId], references: [id], onDelete: Cascade)
   profile    GmbProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
   reviewTags ReviewTag[]
+  createdBy  User?       @relation("ReviewsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy  User?       @relation("ReviewsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   // Performance indexes
   @@index([userId])
@@ -147,6 +185,8 @@ model Review {
   @@index([userId, status, isArchived])
   @@index([profileId, status, isArchived])
   @@index([checkStatus])
+  @@index([createdById])
+  @@index([updatedById])
   @@map("reviews")
 }
 

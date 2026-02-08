@@ -12,6 +12,8 @@ export interface GmbProfile {
     };
     reviewLimit: number | null;
     reviewsStartDate: string | null;
+    reviewOrdered: number;
+    liveCount: number; // Count of LIVE reviews
     _count: { reviews: number };
 }
 

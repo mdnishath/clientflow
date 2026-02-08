@@ -41,7 +41,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
 
-    return NextResponse.json(profile);
+    // Get count of LIVE reviews for order tracking
+    const liveCount = await prisma.review.count({
+        where: {
+            profileId: id,
+            status: "LIVE",
+            isArchived: false,
+        },
+    });
+
+    return NextResponse.json({ ...profile, liveCount });
 }
 
 // DELETE /api/profiles/:id - Archive or permanently delete profile
@@ -61,9 +70,17 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check delete permission for clients
-    if (!scope.isAdmin && !scope.canDelete) {
+    // Check delete permission for clients/workers
+    // Workers report isAdmin=true but might not have delete permission
+    // Check delete permission for clients/workers
+    // Workers report isAdmin=true but might not have delete permission
+    if (!scope.isAdmin && !scope.canDeleteProfiles) {
         return NextResponse.json({ error: "Forbidden - No delete permission" }, { status: 403 });
+    }
+
+    // Explicit worker check because scope.isAdmin is true for workers
+    if (scope.isWorker && !scope.canDeleteProfiles) {
+        return NextResponse.json({ error: "Forbidden - Worker cannot delete profiles" }, { status: 403 });
     }
 
     const whereClause = scope.isAdmin
@@ -73,6 +90,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     try {
         const existing = await prisma.gmbProfile.findFirst({
             where: whereClause,
+            include: { client: true }
         });
 
         if (!existing) {
@@ -105,9 +123,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         }
 
         return NextResponse.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error deleting profile:", error);
-        return NextResponse.json({ error: "Failed to delete profile" }, { status: 500 });
+        return NextResponse.json({
+            error: "Failed to delete profile",
+            details: error?.message || String(error)
+        }, { status: 500 });
     }
 }
 
@@ -126,13 +147,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    if (!scope.isAdmin && !scope.canEditProfiles) {
+        return NextResponse.json({ error: "Forbidden - No edit permission" }, { status: 403 });
+    }
+
+    // Explicit worker check
+    if (scope.isWorker && !scope.canEditProfiles) {
+        return NextResponse.json({ error: "Forbidden - Worker cannot edit profiles" }, { status: 403 });
+    }
+
     const whereClause = scope.isAdmin
         ? { id, client: { userId: scope.userId } }
         : { id, clientId: scope.clientId! };
 
     try {
         const body = await request.json();
-        const { businessName, gmbLink, category, isArchived, reviewLimit, reviewsStartDate } = body;
+        const { businessName, gmbLink, category, isArchived, reviewLimit, reviewsStartDate, reviewOrdered } = body;
 
         const existing = await prisma.gmbProfile.findFirst({
             where: whereClause,
@@ -149,8 +179,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
                 ...(gmbLink !== undefined && { gmbLink: gmbLink?.trim() || null }),
                 ...(category !== undefined && { category: category?.trim() || null }),
                 ...(isArchived !== undefined && { isArchived }),
-                ...(body.reviewLimit !== undefined && { reviewLimit: body.reviewLimit ? parseInt(body.reviewLimit) : null }),
-                ...(body.reviewsStartDate !== undefined && { reviewsStartDate: body.reviewsStartDate ? new Date(body.reviewsStartDate) : null }),
+                ...(reviewLimit !== undefined && { reviewLimit: reviewLimit ? parseInt(reviewLimit) : null }),
+                ...(reviewsStartDate !== undefined && { reviewsStartDate: reviewsStartDate ? new Date(reviewsStartDate) : null }),
+                ...(reviewOrdered !== undefined && { reviewOrdered: typeof reviewOrdered === 'number' ? reviewOrdered : parseInt(reviewOrdered) || 0 }),
             },
         });
 
@@ -168,6 +199,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
                 title: "Profile Restored",
                 message: `Profile "${existing.businessName}" has been restored`,
                 type: "success",
+                link: `/profiles/${profile.id}`,
             });
         } else if (businessName || gmbLink || category) {
             await createNotification({

@@ -47,9 +47,14 @@ export async function PATCH(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
+    const session = await auth();
     const scope = await getClientScope();
     if (!scope) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!scope.isAdmin && !scope.canEditReviews) {
+        return NextResponse.json({ error: "Forbidden - No edit permission" }, { status: 403 });
     }
 
     const { id } = await params;
@@ -89,6 +94,7 @@ export async function PATCH(
                 ...(notes !== undefined && { notes: notes?.trim() || null }),
                 ...(isArchived !== undefined && { isArchived }),
                 completedAt,
+                updatedById: scope.actualUserId, // Track who updated this review
             },
             include: {
                 profile: {
@@ -122,6 +128,34 @@ export async function PATCH(
                 type: status === "LIVE" || status === "DONE" ? "success" : "info",
                 link: `/reviews`,
             });
+
+            // Check if order is now filled when status changes to LIVE
+            if (status === "LIVE") {
+                const profile = await prisma.gmbProfile.findUnique({
+                    where: { id: review.profile.id },
+                    select: { reviewOrdered: true },
+                });
+
+                if (profile && profile.reviewOrdered > 0) {
+                    const liveCount = await prisma.review.count({
+                        where: {
+                            profileId: review.profile.id,
+                            status: "LIVE",
+                            isArchived: false,
+                        },
+                    });
+
+                    if (liveCount >= profile.reviewOrdered) {
+                        await createNotification({
+                            userId: scope.userId,
+                            title: "Order Filled!",
+                            message: `All ${profile.reviewOrdered} reviews for "${businessName}" are now LIVE`,
+                            type: "success",
+                            link: `/profiles/${review.profile.id}`,
+                        });
+                    }
+                }
+            }
         } else if (reviewText || reviewLiveLink || emailUsed || notes) {
             await createNotification({
                 userId: scope.userId,
@@ -157,10 +191,10 @@ export async function DELETE(
     const { searchParams } = new URL(request.url);
     const isPermanent = searchParams.get("permanent") === "true";
 
-    // Permission check for permanent delete
-    if (isPermanent && !scope.isAdmin && !scope.canDelete) {
+    // Permission check for delete/archive
+    if (!scope.isAdmin && !scope.canDeleteReviews) {
         return NextResponse.json(
-            { error: "Insufficient permissions to delete permanently" },
+            { error: "Insufficient permissions to delete/archive reviews" },
             { status: 403 }
         );
     }

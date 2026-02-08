@@ -61,6 +61,8 @@ const STATUS_OPTIONS = [
     { value: "DONE", label: "Done" },
 ];
 
+import { useAuth } from "@/hooks/useAuth";
+
 export function ReviewForm({
     open,
     onOpenChange,
@@ -68,7 +70,9 @@ export function ReviewForm({
     defaultProfileId,
     onSuccess,
 }: ReviewFormProps) {
+    const { can } = useAuth();
     const isEditing = !!review;
+    const isReadOnly = isEditing ? !can.editReviews : !can.createReviews;
 
     const [profiles, setProfiles] = useState<Profile[]>([]);
     const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
@@ -133,7 +137,12 @@ export function ReviewForm({
             setReviewLiveLink(review.reviewLiveLink || "");
             setEmailUsed(review.emailUsed || "");
             setStatus(review.status);
-            setDueDate(review.dueDate ? review.dueDate.split("T")[0] : "");
+            // Auto-set due date to today if status is PENDING and no due date set
+            if (review.status === "PENDING" && !review.dueDate) {
+                setDueDate(new Date().toISOString().split("T")[0]);
+            } else {
+                setDueDate(review.dueDate ? review.dueDate.split("T")[0] : "");
+            }
             setNotes(review.notes || "");
         } else {
             // Reset form for new review
@@ -142,7 +151,7 @@ export function ReviewForm({
             setReviewLiveLink("");
             setEmailUsed("");
             setStatus("PENDING");
-            setDueDate("");
+            setDueDate(new Date().toISOString().split("T")[0]); // Default to current date
             setNotes("");
         }
     }, [review, open]);
@@ -239,7 +248,7 @@ export function ReviewForm({
                                 <Select
                                     value={profileId}
                                     onValueChange={setProfileId}
-                                    disabled={isSaving}
+                                    disabled={isSaving || isReadOnly}
                                 >
                                     <SelectTrigger className="bg-slate-800 border-slate-700">
                                         <SelectValue placeholder={isLoadingProfiles ? "Loading..." : "Select profile"} />
@@ -264,7 +273,7 @@ export function ReviewForm({
                             <Select
                                 value={status}
                                 onValueChange={setStatus}
-                                disabled={isSaving}
+                                disabled={isSaving || isReadOnly}
                             >
                                 <SelectTrigger className="bg-slate-800 border-slate-700">
                                     <SelectValue />
@@ -283,23 +292,25 @@ export function ReviewForm({
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
                                 <Label>Review Text</Label>
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={handleGenerateText}
-                                    disabled={isGenerating || isSaving || (!profileId && !defaultProfileId)}
-                                    className="h-7 px-2 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-600/20"
-                                >
-                                    {isGenerating ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <>
-                                            <Wand2 className="h-4 w-4 mr-1" />
-                                            AI Generate
-                                        </>
-                                    )}
-                                </Button>
+                                {!isReadOnly && (
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={handleGenerateText}
+                                        disabled={isGenerating || isSaving || (!profileId && !defaultProfileId)}
+                                        className="h-7 px-2 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-600/20"
+                                    >
+                                        {isGenerating ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <>
+                                                <Wand2 className="h-4 w-4 mr-1" />
+                                                AI Generate
+                                            </>
+                                        )}
+                                    </Button>
+                                )}
                             </div>
                             <Textarea
                                 value={reviewText}
@@ -307,7 +318,7 @@ export function ReviewForm({
                                 placeholder="The review content..."
                                 rows={4}
                                 className="bg-slate-800 border-slate-700 resize-none"
-                                disabled={isSaving}
+                                disabled={isSaving || isReadOnly}
                             />
                         </div>
 
@@ -321,7 +332,7 @@ export function ReviewForm({
                                         onChange={(e) => setReviewLiveLink(e.target.value)}
                                         placeholder="https://g.co/review/..."
                                         className="bg-slate-800 border-slate-700"
-                                        disabled={isSaving}
+                                        disabled={isSaving || isReadOnly}
                                     />
                                 </div>
                                 <div className="space-y-2">
@@ -332,7 +343,7 @@ export function ReviewForm({
                                         onChange={(e) => setEmailUsed(e.target.value)}
                                         placeholder="reviewer@gmail.com"
                                         className="bg-slate-800 border-slate-700"
-                                        disabled={isSaving}
+                                        disabled={isSaving || isReadOnly}
                                     />
                                     <p className="text-xs text-slate-500">
                                         Email used to post this review on Google
@@ -349,7 +360,7 @@ export function ReviewForm({
                                 value={dueDate}
                                 onChange={(e) => setDueDate(e.target.value)}
                                 className="bg-slate-800 border-slate-700"
-                                disabled={isSaving}
+                                disabled={isSaving || isReadOnly}
                             />
                         </div>
 
@@ -362,7 +373,7 @@ export function ReviewForm({
                                 placeholder="Internal notes..."
                                 rows={2}
                                 className="bg-slate-800 border-slate-700 resize-none"
-                                disabled={isSaving}
+                                disabled={isSaving || isReadOnly}
                             />
                         </div>
                     </div>
@@ -377,20 +388,22 @@ export function ReviewForm({
                         >
                             Cancel
                         </Button>
-                        <Button
-                            type="submit"
-                            disabled={isSaving || (!isEditing && !profileId && !defaultProfileId)}
-                            className="bg-indigo-600 hover:bg-indigo-700"
-                        >
-                            {isSaving ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Saving...
-                                </>
-                            ) : (
-                                isEditing ? "Update Review" : "Create Review"
-                            )}
-                        </Button>
+                        {!isReadOnly && (
+                            <Button
+                                type="submit"
+                                disabled={isSaving || (!isEditing && !profileId && !defaultProfileId)}
+                                className="bg-indigo-600 hover:bg-indigo-700"
+                            >
+                                {isSaving ? (
+                                    <>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    isEditing ? "Update Review" : "Create Review"
+                                )}
+                            </Button>
+                        )}
                     </DialogFooter>
                 </form>
             </DialogContent>

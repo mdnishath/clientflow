@@ -1,11 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
-import { getClientScope, requireAdmin } from "@/lib/rbac";
+import { getClientScope, requireAdmin, requireRole } from "@/lib/rbac";
 import { NextRequest, NextResponse } from "next/server";
 
-// GET /api/clients - List all clients (ADMIN only)
+// GET /api/clients - List all clients (ADMIN and WORKER)
 export async function GET(request: NextRequest) {
-    const error = await requireAdmin();
+    const error = await requireRole(["ADMIN", "WORKER"]);
     if (error) return error;
 
     const scope = await getClientScope();

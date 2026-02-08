@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { reviewIds } = body;
+    const { reviewIds, concurrency } = body;
 
     // Validation
     if (!Array.isArray(reviewIds) || reviewIds.length === 0) {
@@ -27,6 +27,11 @@ export async function POST(request: NextRequest) {
         { error: "Invalid reviewIds array" },
         { status: 400 }
       );
+    }
+
+    // Update concurrency if provided (must be 3, 5, or 10)
+    if (concurrency && [3, 5, 10].includes(concurrency)) {
+      automationService.updateConcurrency(concurrency);
     }
 
     // Start automation

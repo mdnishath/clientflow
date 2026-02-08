@@ -10,7 +10,7 @@ export type LiveCheckStatus = "IDLE" | "STARTING" | "RUNNING" | "COMPLETE" | "ST
 export interface UseLiveCheckResult {
     status: LiveCheckStatus;
     stats: QueueStats;
-    startChecks: (reviewIds: string[]) => Promise<void>;
+    startChecks: (reviewIds: string[], concurrency?: number) => Promise<void>;
     stopChecks: () => Promise<void>;
     reset: () => void;
     isOpen: boolean;
@@ -115,8 +115,8 @@ export function useLiveCheck(onComplete?: () => void) {
         };
     }, [status, checkStatus]);
 
-    // Start Function
-    const startChecks = async (reviewIds: string[]) => {
+    // Start Function - accepts optional concurrency (3, 5, or 10)
+    const startChecks = async (reviewIds: string[], concurrency?: number) => {
         if (reviewIds.length === 0) return;
 
         setStatus("STARTING");
@@ -134,12 +134,12 @@ export function useLiveCheck(onComplete?: () => void) {
         });
 
         try {
-            // 1. Send start request with credentials
+            // 1. Send start request with credentials and optional concurrency
             const res = await fetch("/api/automation/check", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include", // IMPORTANT: Include auth cookies
-                body: JSON.stringify({ reviewIds }),
+                body: JSON.stringify({ reviewIds, concurrency }),
             });
 
             if (!res.ok) {

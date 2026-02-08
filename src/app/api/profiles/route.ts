@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
 import { getClientScope } from "@/lib/rbac";
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 
 // GET /api/profiles - List profiles (scoped by role)
 // ADMIN: sees all profiles
@@ -61,6 +62,7 @@ export async function GET(request: NextRequest) {
                 where,
                 include: {
                     client: { select: { id: true, name: true } },
+                    createdBy: { select: { id: true, name: true } },
                     _count: { select: { reviews: true } },
                 },
                 orderBy: { createdAt: "desc" },
@@ -70,10 +72,24 @@ export async function GET(request: NextRequest) {
             prisma.gmbProfile.count({ where }),
         ]);
 
+        // Get live review counts for each profile
+        const profileIds = profiles.map(p => p.id);
+        const liveCounts = await prisma.review.groupBy({
+            by: ['profileId'],
+            where: {
+                profileId: { in: profileIds },
+                status: 'LIVE',
+                isArchived: false,
+            },
+            _count: { id: true },
+        });
+        const liveCountMap = new Map(liveCounts.map(c => [c.profileId, c._count.id]));
+
         return NextResponse.json({
             profiles: profiles.map((p) => ({
                 ...p,
                 reviewCount: p._count.reviews,
+                liveCount: liveCountMap.get(p.id) || 0,
                 _count: undefined,
             })),
             total,
@@ -102,9 +118,19 @@ export async function GET(request: NextRequest) {
 // POST /api/profiles - Create new GMB Profile
 // Both ADMIN and CLIENT can add profiles
 export async function POST(request: NextRequest) {
+    const session = await auth();
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const scope = await getClientScope();
     if (!scope) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check create permission (for all roles)
+    if (!scope.canCreateProfiles) {
+        return NextResponse.json({ error: "Forbidden - No create permission" }, { status: 403 });
     }
 
     try {
@@ -140,13 +166,17 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Verify client exists
+        // Verify client exists and is owned by the admin (if admin/worker)
+        const clientWhere = scope.isAdmin
+            ? { id: targetClientId, userId: scope.userId }
+            : { id: targetClientId };
+
         const client = await prisma.client.findFirst({
-            where: { id: targetClientId },
+            where: clientWhere,
         });
 
         if (!client) {
-            return NextResponse.json({ error: "Client not found" }, { status: 404 });
+            return NextResponse.json({ error: "Client not found or not accessible" }, { status: 404 });
         }
 
         const profile = await prisma.gmbProfile.create({
@@ -157,14 +187,36 @@ export async function POST(request: NextRequest) {
                 category: category?.trim() || null,
                 reviewLimit: body.reviewLimit ? parseInt(body.reviewLimit) : null,
                 reviewsStartDate: body.reviewsStartDate ? new Date(body.reviewsStartDate) : null,
+                reviewOrdered: body.reviewOrdered ? parseInt(body.reviewOrdered) : 0,
+                createdById: scope.actualUserId, // Track who created this profile
             },
         });
+
+        // Auto-create pending reviews if checkbox checked and reviewOrdered > 0
+        const autoCreateReviews = body.autoCreateReviews === true;
+        const reviewCount = body.reviewOrdered ? parseInt(body.reviewOrdered) : 0;
+
+        if (autoCreateReviews && reviewCount > 0) {
+            const reviewsToCreate = [];
+            for (let i = 0; i < reviewCount; i++) {
+                reviewsToCreate.push({
+                    userId: scope.userId,
+                    profileId: profile.id,
+                    status: "PENDING" as const,
+                    createdById: scope.actualUserId,
+                });
+            }
+
+            await prisma.review.createMany({
+                data: reviewsToCreate,
+            });
+        }
 
         // Create notification
         await createNotification({
             userId: scope.userId,
             title: "New Profile Created",
-            message: `Profile "${businessName}" has been added`,
+            message: `Profile "${businessName}" has been added${autoCreateReviews && reviewCount > 0 ? ` with ${reviewCount} pending reviews` : ''}`,
             type: "success",
             link: `/profiles/${profile.id}`,
         });

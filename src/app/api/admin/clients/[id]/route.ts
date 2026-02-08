@@ -40,7 +40,12 @@ export async function PATCH(
         }
 
         const body = await request.json();
-        const { name, email, password, phone, notes, canDelete } = body;
+        const {
+            name, email, password, phone, notes,
+            canDelete, // Maps to User.canDelete
+            canCreateProfiles, canEditProfiles, canDeleteProfiles,
+            canCreateReviews, canEditReviews, canDeleteReviews
+        } = body;
 
         // Update in transaction
         const updated = await prisma.$transaction(async (tx) => {
@@ -52,6 +57,13 @@ export async function PATCH(
                     ...(email && { email }),
                     ...(phone !== undefined && { phone }),
                     ...(notes !== undefined && { notes }),
+                    // Permissions
+                    ...(canCreateProfiles !== undefined && { canCreateProfiles }),
+                    ...(canEditProfiles !== undefined && { canEditProfiles }),
+                    ...(canDeleteProfiles !== undefined && { canDeleteProfiles }),
+                    ...(canCreateReviews !== undefined && { canCreateReviews }),
+                    ...(canEditReviews !== undefined && { canEditReviews }),
+                    ...(canDeleteReviews !== undefined && { canDeleteReviews }),
                 },
             });
 

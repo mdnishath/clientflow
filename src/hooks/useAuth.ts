@@ -2,13 +2,14 @@
 
 import { useSession } from "next-auth/react";
 
-type Role = "ADMIN" | "CLIENT";
+type Role = "ADMIN" | "CLIENT" | "WORKER";
 
 /**
  * Enhanced auth hook with role and scope awareness
  * Provides easy access to user session, role, and permission checking
  * 
  * ADMIN = Service provider (you) - full access
+ * WORKER = Employee - can manage reviews/profiles based on permissions
  * CLIENT = Customer - sees only their data
  */
 export function useAuth() {
@@ -17,6 +18,16 @@ export function useAuth() {
     const role = session?.user?.role as Role | undefined;
     const clientId = session?.user?.clientId;
     const canDeletePermission = session?.user?.canDelete ?? false;
+
+    // Worker-specific permissions from session
+    const canCreateReviews = session?.user?.canCreateReviews ?? false;
+    const canEditReviews = session?.user?.canEditReviews ?? false;
+    const canDeleteReviews = session?.user?.canDeleteReviews ?? false;
+    const canManageProfiles = session?.user?.canManageProfiles ?? false;
+
+    const isAdmin = role === "ADMIN";
+    const isWorker = role === "WORKER";
+    const isClient = role === "CLIENT";
 
     return {
         // Session state
@@ -31,12 +42,13 @@ export function useAuth() {
 
         // Role info
         role,
-        isAdmin: role === "ADMIN",
-        isClient: role === "CLIENT",
+        isAdmin,
+        isWorker,
+        isClient,
         clientId,
 
         // Permissions
-        canDelete: role === "ADMIN" || canDeletePermission,
+        canDelete: isAdmin || canDeletePermission,
 
         /**
          * Check if user has one of the allowed roles
@@ -49,21 +61,21 @@ export function useAuth() {
          */
         can: {
             // Admin-only actions
-            manageUsers: role === "ADMIN",
-            accessAdminPanel: role === "ADMIN",
-            editProfiles: role === "ADMIN",
-            editReviews: role === "ADMIN",
-            createReviews: role === "ADMIN",
-            manageClients: role === "ADMIN",
+            manageUsers: isAdmin,
+            accessAdminPanel: isAdmin,
+            manageClients: isAdmin,
 
-            // Both roles (but clients see filtered data)
-            viewReviews: role === "ADMIN" || role === "CLIENT",
-            viewProfiles: role === "ADMIN" || role === "CLIENT",
-            addProfiles: role === "ADMIN" || role === "CLIENT",
+            // Profile permissions
+            viewProfiles: isAdmin || isClient || isWorker,
+            addProfiles: isAdmin || canManageProfiles,
+            editProfiles: isAdmin || canManageProfiles,
+            deleteProfiles: isAdmin || canDeletePermission,
 
-            // Conditional delete (admin or permission granted)
-            deleteProfiles: role === "ADMIN" || canDeletePermission,
-            deleteReviews: role === "ADMIN" || canDeletePermission,
+            // Review permissions
+            viewReviews: isAdmin || isClient || isWorker,
+            createReviews: isAdmin || canCreateReviews,
+            editReviews: isAdmin || canEditReviews,
+            deleteReviews: isAdmin || canDeleteReviews,
         },
     };
 }

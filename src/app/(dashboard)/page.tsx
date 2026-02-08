@@ -23,25 +23,31 @@ interface ReviewWithProfile {
 }
 
 // Get dashboard data based on user role and scope
-async function getDashboardData(userId: string, role: string, clientId: string | null) {
+// Get dashboard data based on user role and scope
+async function getDashboardData(userId: string, role: string, clientId: string | null, parentAdminId?: string | null) {
     const isAdmin = role === "ADMIN";
+    const isWorker = role === "WORKER";
+
+    // Determine the effective User ID for scoping (Admin ID or Worker's Parent Admin ID)
+    const effectiveAdminId = isAdmin ? userId : (isWorker && parentAdminId ? parentAdminId : null);
 
     // Build where clause based on role
-    // For clients without linked clientId, show nothing
-    const reviewWhere = isAdmin
-        ? { isArchived: false, profile: { client: { userId } } } // Admin: only reviews from their own clients
+    // Admin or Worker: Show data scoped to the Admin ID
+    // Client: Show data scoped to their clientId
+    const reviewWhere = effectiveAdminId
+        ? { isArchived: false, profile: { client: { userId: effectiveAdminId } } }
         : clientId
             ? { profile: { clientId }, isArchived: false }
-            : { id: "__no_data__", isArchived: false }; // No data if no clientId
+            : { id: "__no_data__", isArchived: false };
 
-    const profileWhere = isAdmin
-        ? { isArchived: false, client: { userId } } // Admin: only profiles from their own clients
+    const profileWhere = effectiveAdminId
+        ? { isArchived: false, client: { userId: effectiveAdminId } }
         : clientId
             ? { clientId, isArchived: false }
             : { id: "__no_data__", isArchived: false };
 
-    const clientWhere = isAdmin
-        ? { isArchived: false, userId } // Admin: only their own clients
+    const clientWhere = effectiveAdminId
+        ? { isArchived: false, userId: effectiveAdminId }
         : clientId
             ? { id: clientId, isArchived: false }
             : { id: "__no_data__", isArchived: false };
@@ -54,6 +60,7 @@ async function getDashboardData(userId: string, role: string, clientId: string |
         inProgressReviews,
         liveReviews,
         issueReviews,
+        missingReviews,
     ] = await Promise.all([
         prisma.client.count({ where: clientWhere }),
         prisma.gmbProfile.count({ where: profileWhere }),
@@ -67,15 +74,16 @@ async function getDashboardData(userId: string, role: string, clientId: string |
                 status: { in: ["MISSING", "GOOGLE_ISSUE"] },
             },
         }),
+        prisma.review.count({ where: { ...reviewWhere, checkStatus: "MISSING" } }),
     ]);
 
     // Get overdue reviews
-    const overdueWhere = isAdmin
+    const overdueWhere = effectiveAdminId
         ? {
             dueDate: { lt: new Date() },
             status: { notIn: ["DONE", "LIVE"] },
             isArchived: false,
-            profile: { client: { userId } }, // RBAC: Scoped to Admin
+            profile: { client: { userId: effectiveAdminId } },
         }
         : clientId
             ? {
@@ -95,36 +103,121 @@ async function getDashboardData(userId: string, role: string, clientId: string |
         take: 5,
     });
 
-    // Get today's reviews
+
+    // ============================================================================
+    // SCHEDULING-BASED PROGRESS (NOT dueDate-based)
+    // ============================================================================
+    // Match the logic from /api/me/stats to ensure consistency
+
+    // Get server's start of today
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const todayWhere = isAdmin
-        ? {
-            dueDate: { gte: today, lt: tomorrow },
-            status: { notIn: ["DONE", "LIVE"] },
-            isArchived: false,
-            profile: { client: { userId } }, // RBAC: Scoped to Admin
-        }
-        : clientId
-            ? {
-                profile: { clientId },
-                dueDate: { gte: today, lt: tomorrow },
-                status: { notIn: ["DONE", "LIVE"] },
-                isArchived: false,
-            }
-            : { id: "__no_data__" };
-
-    const todayReviews = await prisma.review.findMany({
-        where: todayWhere as any,
+    // 1. Fetch ALL reviews (no dueDate filter)
+    const allReviews = await prisma.review.findMany({
+        where: reviewWhere as any,
         include: {
-            profile: { select: { businessName: true, client: { select: { name: true } } } },
+            profile: {
+                select: {
+                    id: true,
+                    reviewLimit: true,
+                    reviewsStartDate: true,
+                    businessName: true, // Added for todayReviews list
+                    client: { select: { name: true } } // Added for todayReviews list
+                },
+            },
         },
-        orderBy: { dueDate: "asc" },
-        take: 5,
+        orderBy: { createdAt: "asc" },
     });
+
+    // 2. Get "Done Today" counts per profile
+    const profileIds = [...new Set(allReviews.map(r => r.profileId))];
+    const doneCounts = await prisma.review.groupBy({
+        by: ["profileId"],
+        where: {
+            profileId: { in: profileIds },
+            status: { in: ["DONE", "LIVE"] },
+            completedAt: { gte: today },
+            isArchived: false,
+        },
+        _count: { id: true },
+    });
+
+    const doneTodayMap: Record<string, number> = {};
+    doneCounts.forEach(c => {
+        doneTodayMap[c.profileId] = c._count.id;
+    });
+
+    // 3. Apply scheduling logic
+    const reviewsByProfile: Record<string, typeof allReviews> = {};
+    for (const r of allReviews) {
+        if (!reviewsByProfile[r.profileId]) {
+            reviewsByProfile[r.profileId] = [];
+        }
+        reviewsByProfile[r.profileId].push(r);
+    }
+
+    let todayTotal = 0;
+    let todayLive = 0;
+    let todayPending = 0;
+    let todayIssues = 0;
+    const todayReviews: ReviewWithProfile[] = [];
+
+    for (const profileId in reviewsByProfile) {
+        const profileReviews = reviewsByProfile[profileId];
+
+        // Sort by creation
+        profileReviews.sort((a, b) => {
+            const timeA = new Date(a.createdAt).getTime();
+            const timeB = new Date(b.createdAt).getTime();
+            return timeA === timeB ? (a.id < b.id ? -1 : 1) : timeA - timeB;
+        });
+
+        const { reviewLimit, reviewsStartDate } = profileReviews[0].profile;
+
+        if (reviewLimit && reviewsStartDate) {
+            const doneTodayCount = doneTodayMap[profileId] || 0;
+            const remainingQuota = Math.max(0, reviewLimit - doneTodayCount);
+
+            let quotaUsed = 0;
+
+            for (const review of profileReviews) {
+                const isPendingType = review.status !== "DONE" && review.status !== "LIVE" && !review.isArchived;
+
+                if (isPendingType) {
+                    if (quotaUsed < remainingQuota) {
+                        // This review is DUE TODAY (within quota)
+                        todayTotal++;
+                        if (review.status === "PENDING") {
+                            todayPending++;
+                            if (todayReviews.length < 5) {
+                                todayReviews.push({
+                                    id: review.id,
+                                    status: review.status,
+                                    dueDate: review.dueDate,
+                                    profile: {
+                                        businessName: (review.profile as any).businessName || "Unknown",
+                                        client: { name: (review.profile as any).client?.name || "Unknown" }
+                                    }
+                                });
+                            }
+                        }
+                        if (review.status === "MISSING" || review.status === "GOOGLE_ISSUE") {
+                            todayIssues++;
+                        }
+                        quotaUsed++;
+                    }
+                    // else: scheduled for future, don't count
+                } else if (review.status === "LIVE" || review.status === "DONE") {
+                    // Count completed reviews (they were part of initial pending + now live)
+                    if (review.completedAt && new Date(review.completedAt) >= today) {
+                        todayLive++;
+                        todayTotal++;
+                    }
+                }
+            }
+        }
+    }
 
     return {
         totalClients,
@@ -134,9 +227,16 @@ async function getDashboardData(userId: string, role: string, clientId: string |
         inProgressReviews,
         liveReviews,
         issueReviews,
+        missingReviews,
         overdueReviews,
         todayReviews,
         isAdmin,
+        todayStats: {
+            total: todayTotal,
+            live: todayLive,
+            pending: todayPending,
+            issues: todayIssues
+        }
     };
 }
 
@@ -154,33 +254,133 @@ export default async function DashboardPage() {
     const session = await auth();
     if (!session?.user?.id) return null;
 
-    const { role, clientId } = session.user;
-    const data = await getDashboardData(session.user.id, role, clientId);
+    const { role, clientId, parentAdminId } = session.user;
+    const data = await getDashboardData(session.user.id, role, clientId, parentAdminId);
+
+    // If total is 0, we consider it 100% done (nothing pending)
+    const dailyProgress = data.todayStats.total > 0
+        ? Math.round((data.todayStats.live / data.todayStats.total) * 100)
+        : 100;
 
     return (
         <div className="p-6 lg:p-8 pt-16 lg:pt-8">
             {/* Header */}
-            <div className="mb-8">
-                <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-                <p className="text-slate-400 mt-1">
-                    Welcome back, {session.user.name || "there"}
-                </p>
+            <div className="mb-8 flex items-end justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+                    <p className="text-slate-400 mt-1">
+                        Welcome back, {session.user.name || "there"}
+                    </p>
+                </div>
             </div>
 
             {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+
+                {/* 1. Daily Progress Card (Prominent) */}
+                <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700 md:col-span-1 lg:col-span-1 border-l-4 border-l-indigo-500 shadow-lg">
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-slate-400 flex items-center justify-between">
+                            <span>Today's Goal</span>
+                            <span className="text-xs font-normal bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full">
+                                {new Date().toLocaleDateString('en-US', { weekday: 'short' })}
+                            </span>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                        <div className="flex items-end justify-between mb-4">
+                            <div className="space-y-1">
+                                <span className="text-3xl font-bold text-white block">
+                                    {dailyProgress}%
+                                </span>
+                                <span className="text-xs text-slate-400">
+                                    Completion Rate
+                                </span>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-sm font-medium text-green-400 flex items-center justify-end gap-1">
+                                    <CheckCircle2 size={14} />
+                                    {data.todayStats.live} Done
+                                </div>
+                                <div className="text-xs text-slate-500 mt-1">
+                                    {data.todayStats.pending} Pending
+                                </div>
+                            </div>
+                        </div>
+                        <div className="space-y-1.5">
+                            <div className="h-2 w-full bg-slate-700/50 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-1000 ease-out"
+                                    style={{ width: `${dailyProgress}%` }}
+                                />
+                            </div>
+                            <p className="text-[10px] text-center text-slate-500">
+                                {data.todayStats.live} of {data.todayStats.total} reviews live today
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="bg-slate-800/50 border-slate-700">
+                    <CardContent className="p-4 flex flex-col justify-between h-full">
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm text-slate-400">Total Reviews</p>
+                            <Star className="h-6 w-6 text-yellow-400" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-white">
+                                {data.totalReviews}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">All time</p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="bg-slate-800/50 border-slate-700">
+                    <CardContent className="p-4 flex flex-col justify-between h-full">
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm text-slate-400">Pending</p>
+                            <Clock className="h-6 w-6 text-slate-400" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-white">
+                                {data.pendingReviews}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">Awaiting action</p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="bg-slate-800/50 border-slate-700">
+                    <CardContent className="p-4 flex flex-col justify-between h-full">
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm text-slate-400">Live</p>
+                            <CheckCircle2 className="h-6 w-6 text-green-400" />
+                        </div>
+                        <div>
+                            <p className="text-2xl font-bold text-green-400">
+                                {data.liveReviews}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">Effectively posted</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* Second Row Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                {/* Show Clients count only for Admin */}
+                {/* Clients/Profiles small cards */}
                 {data.isAdmin ? (
                     <Card className="bg-slate-800/50 border-slate-700">
                         <CardContent className="p-4">
                             <div className="flex items-center justify-between">
                                 <div>
                                     <p className="text-sm text-slate-400">Clients</p>
-                                    <p className="text-2xl font-bold text-white">
+                                    <p className="text-xl font-bold text-white">
                                         {data.totalClients}
                                     </p>
                                 </div>
-                                <Users className="h-8 w-8 text-indigo-400" />
+                                <Users className="h-5 w-5 text-indigo-400" />
                             </div>
                         </CardContent>
                     </Card>
@@ -190,11 +390,11 @@ export default async function DashboardPage() {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <p className="text-sm text-slate-400">Profiles</p>
-                                    <p className="text-2xl font-bold text-white">
+                                    <p className="text-xl font-bold text-white">
                                         {data.totalProfiles}
                                     </p>
                                 </div>
-                                <Store className="h-8 w-8 text-indigo-400" />
+                                <Store className="h-5 w-5 text-indigo-400" />
                             </div>
                         </CardContent>
                     </Card>
@@ -204,57 +404,12 @@ export default async function DashboardPage() {
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-slate-400">Total Reviews</p>
-                                <p className="text-2xl font-bold text-white">
-                                    {data.totalReviews}
-                                </p>
-                            </div>
-                            <Star className="h-8 w-8 text-yellow-400" />
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-slate-800/50 border-slate-700">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-slate-400">Pending</p>
-                                <p className="text-2xl font-bold text-white">
-                                    {data.pendingReviews}
-                                </p>
-                            </div>
-                            <Clock className="h-8 w-8 text-slate-400" />
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-slate-800/50 border-slate-700">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-slate-400">Live</p>
-                                <p className="text-2xl font-bold text-green-400">
-                                    {data.liveReviews}
-                                </p>
-                            </div>
-                            <CheckCircle2 className="h-8 w-8 text-green-400" />
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Second Row Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-                <Card className="bg-slate-800/50 border-slate-700">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
                                 <p className="text-sm text-slate-400">In Progress</p>
-                                <p className="text-2xl font-bold text-blue-400">
+                                <p className="text-xl font-bold text-blue-400">
                                     {data.inProgressReviews}
                                 </p>
                             </div>
-                            <ListTodo className="h-8 w-8 text-blue-400" />
+                            <ListTodo className="h-5 w-5 text-blue-400" />
                         </div>
                     </CardContent>
                 </Card>
@@ -264,21 +419,26 @@ export default async function DashboardPage() {
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-slate-400">Issues</p>
-                                <p className="text-2xl font-bold text-red-400">
+                                <p className="text-xl font-bold text-red-400">
                                     {data.issueReviews}
                                 </p>
                             </div>
-                            <AlertCircle className="h-8 w-8 text-red-400" />
+                            <AlertCircle className="h-5 w-5 text-red-400" />
                         </div>
                     </CardContent>
                 </Card>
 
-                <Link href="/reviews" className="col-span-2 lg:col-span-1">
-                    <Card className="bg-gradient-to-r from-indigo-600 to-purple-600 border-0 h-full hover:from-indigo-500 hover:to-purple-500 transition-all cursor-pointer">
-                        <CardContent className="p-4 flex items-center justify-center h-full">
-                            <div className="text-center">
-                                <Star className="h-8 w-8 text-white mx-auto mb-2" />
-                                <p className="text-white font-medium">View Reviews</p>
+                <Link href="/checker?checkStatus=MISSING">
+                    <Card className="bg-slate-800/50 border-slate-700 hover:border-yellow-500/50 transition-colors cursor-pointer h-full">
+                        <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-yellow-400">Missing</p>
+                                    <p className="text-xl font-bold text-yellow-400">
+                                        {data.missingReviews}
+                                    </p>
+                                </div>
+                                <AlertCircle className="h-5 w-5 text-yellow-400" />
                             </div>
                         </CardContent>
                     </Card>

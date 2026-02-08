@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import {
     Activity,
@@ -47,6 +48,8 @@ import {
     updateReviewStatus,
     optimisticStatusUpdate,
     revertStatusUpdate,
+    optimisticDeleteReview,
+    revertDeleteReview,
     type Review,
 } from "@/lib/features/reviewsSlice";
 import { toast } from "sonner";
@@ -145,15 +148,20 @@ function ReviewActionButtons({
 export default function CheckerPage() {
     const dispatch = useAppDispatch();
     const { items: reviews, meta, loading } = useAppSelector((state) => state.reviews);
+    const searchParams = useSearchParams();
+
+    // Read checkStatus from URL if coming from dashboard
+    const urlCheckStatus = searchParams.get("checkStatus");
 
     const [page, setPage] = useState(1);
     const [loadMode, setLoadMode] = useState<"paginated" | "all">("paginated");
     const [statusFilter, setStatusFilter] = useState("not-PENDING");
-    const [checkStatusFilter, setCheckStatusFilter] = useState("all");
+    const [checkStatusFilter, setCheckStatusFilter] = useState(urlCheckStatus || "all");
     const [search, setSearch] = useState("");
     const [showArchived, setShowArchived] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+    const [threadCount, setThreadCount] = useState(5); // Default 5 threads, configurable 3/5/10
 
     // Form states
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -205,15 +213,30 @@ export default function CheckerPage() {
         fetchReviewsData();
     }, [fetchReviewsData]);
 
-    // Optimistic status change (like profile page)
+    // Optimistic status change with filter-aware removal
+    // When status changes and new status doesn't match current filter, item smoothly disappears
     const handleStatusChange = async (reviewId: string, newStatus: string) => {
         const review = reviews.find((r) => r.id === reviewId);
         if (!review) return;
 
         const oldStatus = review.status;
 
+        // Check if new status will still match the current filter
+        // Handle special "not-PENDING" filter used in Checker
+        const willMatchFilter =
+            statusFilter === "all" ||
+            newStatus === statusFilter ||
+            (statusFilter === "not-PENDING" && newStatus !== "PENDING");
+
         // Optimistic update - smooth, no blink
         dispatch(optimisticStatusUpdate({ reviewId, status: newStatus }));
+
+        // If new status doesn't match filter, smoothly remove from list
+        if (!willMatchFilter) {
+            setTimeout(() => {
+                dispatch(optimisticDeleteReview(reviewId));
+            }, 300);
+        }
 
         try {
             const result = await dispatch(updateReviewStatus({ reviewId, status: newStatus }));
@@ -221,10 +244,16 @@ export default function CheckerPage() {
                 toast.success(`Status updated to ${statusConfig[newStatus]?.label}`);
             } else {
                 dispatch(revertStatusUpdate({ reviewId, status: oldStatus }));
+                if (!willMatchFilter) {
+                    dispatch(revertDeleteReview(review));
+                }
                 toast.error("Failed to update status");
             }
         } catch {
             dispatch(revertStatusUpdate({ reviewId, status: oldStatus }));
+            if (!willMatchFilter) {
+                dispatch(revertDeleteReview(review));
+            }
             toast.error("Failed to update status");
         }
     };
@@ -295,18 +324,18 @@ export default function CheckerPage() {
     // Live Check functions
     const handleCheckSelected = () => {
         if (selectedIds.length === 0) {
-            toast.warning("Select reviews first");
+            toast.error("No reviews selected");
             return;
         }
-        startChecks(selectedIds);
-        toast.success(`Checking ${selectedIds.length} reviews...`);
+        startChecks(selectedIds, threadCount);
+        toast.success(`Checking ${selectedIds.length} reviews with ${threadCount} threads...`);
     };
 
     const handleCheckAll = () => {
         const allIds = reviews.map((r) => r.id);
         setSelectedIds(allIds);
-        startChecks(allIds);
-        toast.success(`Checking ${allIds.length} reviews...`);
+        startChecks(allIds, threadCount);
+        toast.success(`Checking ${allIds.length} reviews with ${threadCount} threads...`);
     };
 
     const handleEditReview = (review: Review) => {
@@ -414,6 +443,22 @@ export default function CheckerPage() {
                                 <Activity size={12} className="mr-2" /> Checking
                             </span>
                         </SelectItem>
+                    </SelectContent>
+                </Select>
+
+                {/* Thread Count Dropdown */}
+                <Select
+                    value={threadCount.toString()}
+                    onValueChange={(val) => setThreadCount(parseInt(val))}
+                >
+                    <SelectTrigger className="w-[130px] bg-slate-800/50 border-slate-700 text-white">
+                        <Activity size={14} className="mr-2" />
+                        <SelectValue placeholder="Threads" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700">
+                        <SelectItem value="3">3 Threads</SelectItem>
+                        <SelectItem value="5">5 Threads</SelectItem>
+                        <SelectItem value="10">10 Threads</SelectItem>
                     </SelectContent>
                 </Select>
                 <Button
@@ -585,6 +630,20 @@ export default function CheckerPage() {
                                                             {review.profile.category}
                                                         </Badge>
                                                     )}
+                                                    {/* Attribution */}
+                                                    {review.status === "LIVE" && review.updatedBy ? (
+                                                        <span className="text-green-400 text-xs font-medium">
+                                                            Live by {review.updatedBy.name}
+                                                        </span>
+                                                    ) : review.status === "APPLIED" && review.updatedBy ? (
+                                                        <span className="text-purple-400 text-xs font-medium">
+                                                            Applied by {review.updatedBy.name}
+                                                        </span>
+                                                    ) : review.createdBy ? (
+                                                        <span className="text-slate-500 text-xs">
+                                                            Created by {review.createdBy.name}
+                                                        </span>
+                                                    ) : null}
                                                     {review.isArchived && (
                                                         <Badge variant="outline" className="text-amber-400 border-amber-400/50 text-xs">
                                                             Archived

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     Dialog,
     DialogContent,
@@ -25,6 +26,7 @@ interface GmbProfile {
     category: string | null;
     reviewLimit: number | null;
     reviewsStartDate: string | null;
+    reviewOrdered: number;
 }
 
 interface CategoryOption {
@@ -41,6 +43,8 @@ interface ProfileFormProps {
     onSuccess: () => void;
 }
 
+import { useAuth } from "@/hooks/useAuth";
+
 export function ProfileForm({
     open,
     onOpenChange,
@@ -48,13 +52,18 @@ export function ProfileForm({
     profile,
     onSuccess,
 }: ProfileFormProps) {
+    const { can } = useAuth();
     const [businessName, setBusinessName] = useState("");
     const [gmbLink, setGmbLink] = useState("");
     const [category, setCategory] = useState("__none__");
     const [reviewLimit, setReviewLimit] = useState("");
     const [reviewsStartDate, setReviewsStartDate] = useState("");
+    const [reviewOrdered, setReviewOrdered] = useState("");
+    const [autoCreateReviews, setAutoCreateReviews] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
+
+    const isReadOnly = !can.editProfiles;
 
     // Categories from API
     const [categories, setCategories] = useState<CategoryOption[]>([]);
@@ -92,8 +101,9 @@ export function ProfileForm({
             setReviewsStartDate(
                 profile.reviewsStartDate
                     ? new Date(profile.reviewsStartDate).toISOString().split("T")[0]
-                    : ""
+                    : new Date().toISOString().split("T")[0]
             );
+            setReviewOrdered(profile.reviewOrdered !== null && profile.reviewOrdered !== undefined ? profile.reviewOrdered.toString() : "0");
         } else if (open) {
             resetForm();
         }
@@ -115,6 +125,8 @@ export function ProfileForm({
                 category: category === "__none__" ? null : category,
                 reviewLimit: reviewLimit ? parseInt(reviewLimit) : null,
                 reviewsStartDate: reviewsStartDate ? new Date(reviewsStartDate) : null,
+                reviewOrdered: reviewOrdered ? parseInt(reviewOrdered) : 0,
+                autoCreateReviews: !isEditing ? autoCreateReviews : undefined,
             };
 
             if (!isEditing && clientId) {
@@ -147,7 +159,8 @@ export function ProfileForm({
         setGmbLink("");
         setCategory("__none__");
         setReviewLimit("");
-        setReviewsStartDate("");
+        setReviewsStartDate(new Date().toISOString().split("T")[0]);
+        setReviewOrdered("");
         setError("");
     };
 
@@ -198,10 +211,24 @@ export function ProfileForm({
                         </Select>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="reviewOrdered" className="text-slate-200">
+                                Reviews Ordered
+                            </Label>
+                            <Input
+                                id="reviewOrdered"
+                                type="number"
+                                min="0"
+                                value={reviewOrdered}
+                                onChange={(e) => setReviewOrdered(e.target.value)}
+                                placeholder="e.g. 10"
+                                className="bg-slate-700/50 border-slate-600 text-white"
+                            />
+                        </div>
                         <div className="space-y-2">
                             <Label htmlFor="reviewLimit" className="text-slate-200">
-                                Daily Review Limit
+                                Daily Limit
                             </Label>
                             <Input
                                 id="reviewLimit"
@@ -238,6 +265,20 @@ export function ProfileForm({
                             className="bg-slate-700/50 border-slate-600 text-white"
                         />
                     </div>
+
+                    {!isEditing && reviewOrdered && parseInt(reviewOrdered) > 0 && (
+                        <div className="flex items-center space-x-2 pt-2">
+                            <Checkbox
+                                id="autoCreateReviews"
+                                checked={autoCreateReviews}
+                                onCheckedChange={(checked) => setAutoCreateReviews(checked as boolean)}
+                                className="border-slate-500"
+                            />
+                            <Label htmlFor="autoCreateReviews" className="text-sm font-normal text-slate-300 cursor-pointer">
+                                Auto-create {reviewOrdered} pending reviews for this profile
+                            </Label>
+                        </div>
+                    )}
 
                     {error && <p className="text-sm text-red-400">{error}</p>}
 

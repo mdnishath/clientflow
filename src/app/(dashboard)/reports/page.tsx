@@ -10,6 +10,7 @@ import { ExportReportButton } from "@/components/reports/export-report-button";
 import { ReportsFilters } from "@/components/reports/reports-filters";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { Sparkline } from "@/components/ui/sparkline";
+import { ProfileProgressReport } from "@/components/reports/profile-progress-report";
 import { format, subDays, startOfDay, endOfDay, differenceInDays } from "date-fns";
 import Link from "next/link";
 import {
@@ -389,6 +390,41 @@ export default async function ReportsPage({
 
             {/* Filters */}
             <ReportsFilters clients={clients} categories={categories} />
+
+            {/* Profile Progress Report Section */}
+            <div className="mb-8">
+                <Card className="bg-slate-800/50 border-slate-700">
+                    <CardHeader className="border-b border-slate-700/50">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="text-lg text-white">Profile Progress Report</CardTitle>
+                                <p className="text-sm text-slate-400 mt-1">Track completion status across all profiles</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <a
+                                    href="/api/reports/profile-progress/export?format=pdf"
+                                    download
+                                    className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+                                >
+                                    <FileText size={16} />
+                                    Export PDF
+                                </a>
+                                <a
+                                    href="/api/reports/profile-progress/export?format=excel"
+                                    download
+                                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+                                >
+                                    <FileText size={16} />
+                                    Export Excel
+                                </a>
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                        <ProfileProgressReport />
+                    </CardContent>
+                </Card>
+            </div>
 
             {/* Insights Panel (Best Client, This Week, Problem Reviews, Recent Activity) */}
             <div className="mb-8">

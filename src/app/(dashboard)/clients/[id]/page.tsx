@@ -22,6 +22,7 @@ import {
     ChevronRight,
     Building2,
 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -56,6 +57,7 @@ import {
 import { ClientForm } from "@/components/clients/client-form";
 import { ProfileForm } from "@/components/profiles/profile-form";
 import { toast } from "sonner";
+import { ProfileCard } from "@/components/profiles/profile-card";
 
 interface GmbProfile {
     id: string;
@@ -87,6 +89,7 @@ interface Category {
 export default function ClientDetailPage() {
     const params = useParams();
     const router = useRouter();
+    const { can } = useAuth();
     const [client, setClient] = useState<Client | null>(null);
     const [profiles, setProfiles] = useState<GmbProfile[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
@@ -230,15 +233,18 @@ export default function ClientDetailPage() {
             const res = await fetch(`/api/profiles/${deletingProfile.id}?permanent=true`, {
                 method: "DELETE",
             });
-            if (!res.ok) throw new Error("Failed to delete");
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.details || data.error || "Failed to delete");
+            }
 
             toast.success(`"${deletingProfile.businessName}" permanently deleted`);
             setDeleteDialogOpen(false);
             setDeletingProfile(null);
             fetchProfiles();
             fetchClient();
-        } catch {
-            toast.error("Failed to delete profile");
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to delete profile");
         }
     };
 
@@ -269,7 +275,7 @@ export default function ClientDetailPage() {
             const res = await fetch("/api/profiles/bulk", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ids: Array.from(selectedIds) }),
+                body: JSON.stringify({ ids: Array.from(selectedIds), action: "archive" }),
             });
 
             if (!res.ok) throw new Error("Failed to archive");
@@ -427,14 +433,16 @@ export default function ClientDetailPage() {
                             {showArchived ? "Archived" : "Active"}
                         </Label>
                     </div>
-                    <Button
-                        onClick={() => setIsProfileFormOpen(true)}
-                        size="sm"
-                        className="bg-indigo-600 hover:bg-indigo-700"
-                    >
-                        <Plus size={16} className="mr-2" />
-                        Add Profile
-                    </Button>
+                    {can.addProfiles && (
+                        <Button
+                            onClick={() => setIsProfileFormOpen(true)}
+                            size="sm"
+                            className="bg-indigo-600 hover:bg-indigo-700"
+                        >
+                            <Plus size={16} className="mr-2" />
+                            Add Profile
+                        </Button>
+                    )}
                 </div>
             </div>
 
@@ -577,93 +585,19 @@ export default function ClientDetailPage() {
                     {/* Profiles Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         {profiles.map((profile) => (
-                            <Card
+                            <ProfileCard
                                 key={profile.id}
-                                className={`bg-slate-800/50 border-slate-700 transition-all ${profile.isArchived ? "opacity-70 border-dashed" : ""
-                                    } ${selectedIds.has(profile.id) ? "ring-2 ring-indigo-500" : ""}`}
-                            >
-                                <CardContent className="p-4">
-                                    <div className="flex items-start gap-3">
-                                        <Checkbox
-                                            checked={selectedIds.has(profile.id)}
-                                            onCheckedChange={() => toggleSelect(profile.id)}
-                                            className="mt-1"
-                                        />
-                                        <div
-                                            className="flex-1 cursor-pointer"
-                                            onClick={() => router.push(`/profiles/${profile.id}`)}
-                                        >
-                                            <div className="flex items-start justify-between">
-                                                <div>
-                                                    <h3 className="font-bold text-white mb-1 hover:text-indigo-400 transition-colors">
-                                                        {profile.businessName}
-                                                    </h3>
-                                                    <div className="flex items-center gap-2">
-                                                        {profile.category && (
-                                                            <Badge variant="secondary" className="bg-slate-700 text-xs">
-                                                                {profile.category}
-                                                            </Badge>
-                                                        )}
-                                                        {profile.isArchived && (
-                                                            <Badge variant="outline" className="text-orange-500 text-xs">
-                                                                Archived
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <ExternalLink size={16} className="text-slate-500" />
-                                            </div>
-                                            <div className="mt-3 flex items-center justify-between text-sm">
-                                                <span className="text-slate-400">
-                                                    {profile.reviewCount ?? profile._count?.reviews ?? 0} Reviews
-                                                </span>
-                                                {profile.gmbLink && (
-                                                    <span
-                                                        className="text-indigo-400 flex items-center gap-1 text-xs hover:underline"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            window.open(profile.gmbLink!, "_blank");
-                                                        }}
-                                                    >
-                                                        Open Map
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white h-8 w-8">
-                                                    <MoreHorizontal className="h-4 w-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end" className="bg-slate-800 border-slate-700">
-                                                {profile.isArchived ? (
-                                                    <DropdownMenuItem onClick={() => handleRestore(profile)}>
-                                                        <RotateCcw className="mr-2 h-4 w-4" />
-                                                        Restore
-                                                    </DropdownMenuItem>
-                                                ) : (
-                                                    <DropdownMenuItem onClick={() => handleArchive(profile)}>
-                                                        <Archive className="mr-2 h-4 w-4" />
-                                                        Archive
-                                                    </DropdownMenuItem>
-                                                )}
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuItem
-                                                    className="text-destructive"
-                                                    onClick={() => {
-                                                        setDeletingProfile(profile);
-                                                        setDeleteDialogOpen(true);
-                                                    }}
-                                                >
-                                                    <Trash2 className="mr-2 h-4 w-4" />
-                                                    Delete Permanently
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
-                                    </div>
-                                </CardContent>
-                            </Card>
+                                profile={profile}
+                                isSelected={selectedIds.has(profile.id)}
+                                onToggleSelect={() => toggleSelect(profile.id)}
+                                onArchive={can.deleteProfiles ? (p) => handleArchive(p as unknown as GmbProfile) : undefined}
+                                onRestore={can.deleteProfiles ? (p) => handleRestore(p as unknown as GmbProfile) : undefined}
+                                onDelete={can.deleteProfiles ? (p) => {
+                                    setDeletingProfile(p as unknown as GmbProfile);
+                                    setDeleteDialogOpen(true);
+                                } : undefined}
+                                isAdmin={true} // Since we are on client detail page, show admin controls if permitted
+                            />
                         ))}
                     </div>
 

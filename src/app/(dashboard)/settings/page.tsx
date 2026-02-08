@@ -14,24 +14,68 @@ import {
     Download,
     Upload,
     AlertTriangle,
-    Shield
+    Shield,
+    User
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useRouter } from "next/navigation";
 
 export default function SettingsPage() {
-    const { isAdmin } = useAuth();
+    const { isAdmin, user } = useAuth();
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState<"account" | "admin">("account");
 
     // account state
+    const [name, setName] = useState("");
+    const [isUpdatingName, setIsUpdatingName] = useState(false);
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
 
+    // Initial name load
+    const [nameInitialized, setNameInitialized] = useState(false);
+
+    if (user?.name && !nameInitialized) {
+        setName(user.name);
+        setNameInitialized(true);
+    }
+
     // admin state
     const [isRestoring, setIsRestoring] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleNameUpdate = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (!name.trim()) {
+            toast.error("Name cannot be empty");
+            return;
+        }
+
+        setIsUpdatingName(true);
+        try {
+            const res = await fetch("/api/me", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name }),
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                toast.success("Name updated successfully");
+                router.refresh(); // Refresh to update user session/UI
+            } else {
+                toast.error(data.error || "Failed to update name");
+            }
+        } catch {
+            toast.error("Failed to update name");
+        } finally {
+            setIsUpdatingName(false);
+        }
+    };
 
     const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -143,8 +187,8 @@ export default function SettingsPage() {
                 <button
                     onClick={() => setActiveTab("account")}
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "account"
-                            ? "border-indigo-500 text-indigo-400"
-                            : "border-transparent text-slate-400 hover:text-white"
+                        ? "border-indigo-500 text-indigo-400"
+                        : "border-transparent text-slate-400 hover:text-white"
                         }`}
                 >
                     Account
@@ -153,8 +197,8 @@ export default function SettingsPage() {
                     <button
                         onClick={() => setActiveTab("admin")}
                         className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "admin"
-                                ? "border-indigo-500 text-indigo-400"
-                                : "border-transparent text-slate-400 hover:text-white"
+                            ? "border-indigo-500 text-indigo-400"
+                            : "border-transparent text-slate-400 hover:text-white"
                             }`}
                     >
                         Admin & Database
@@ -164,82 +208,140 @@ export default function SettingsPage() {
 
             <div className="max-w-xl">
                 {activeTab === "account" && (
-                    <Card className="bg-slate-800/50 border-slate-700">
-                        <CardHeader>
-                            <CardTitle className="text-white flex items-center gap-2">
-                                <Lock className="h-5 w-5 text-indigo-400" />
-                                Change Password
-                            </CardTitle>
-                            <CardDescription className="text-slate-400">
-                                Update your password to keep your account secure
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <form onSubmit={handlePasswordChange} className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="currentPassword" className="text-slate-300">
-                                        Current Password
-                                    </Label>
-                                    <Input
-                                        id="currentPassword"
-                                        type="password"
-                                        value={currentPassword}
-                                        onChange={(e) => setCurrentPassword(e.target.value)}
-                                        placeholder="Enter current password"
-                                        className="bg-slate-900 border-slate-600 text-white"
-                                        required
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="newPassword" className="text-slate-300">
-                                        New Password
-                                    </Label>
-                                    <Input
-                                        id="newPassword"
-                                        type="password"
-                                        value={newPassword}
-                                        onChange={(e) => setNewPassword(e.target.value)}
-                                        placeholder="Enter new password (min 6 characters)"
-                                        className="bg-slate-900 border-slate-600 text-white"
-                                        required
-                                        minLength={6}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="confirmPassword" className="text-slate-300">
-                                        Confirm New Password
-                                    </Label>
-                                    <Input
-                                        id="confirmPassword"
-                                        type="password"
-                                        value={confirmPassword}
-                                        onChange={(e) => setConfirmPassword(e.target.value)}
-                                        placeholder="Confirm new password"
-                                        className="bg-slate-900 border-slate-600 text-white"
-                                        required
-                                        minLength={6}
-                                    />
-                                </div>
-                                <Button
-                                    type="submit"
-                                    disabled={isLoading || !currentPassword || !newPassword || !confirmPassword}
-                                    className="w-full bg-indigo-600 hover:bg-indigo-700"
-                                >
-                                    {isLoading ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Updating...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <CheckCircle2 className="mr-2 h-4 w-4" />
-                                            Update Password
-                                        </>
-                                    )}
-                                </Button>
-                            </form>
-                        </CardContent>
-                    </Card>
+                    <div className="space-y-6">
+                        {/* Profile Information Card */}
+                        <Card className="bg-slate-800/50 border-slate-700">
+                            <CardHeader>
+                                <CardTitle className="text-white flex items-center gap-2">
+                                    <User className="h-5 w-5 text-indigo-400" />
+                                    Profile Information
+                                </CardTitle>
+                                <CardDescription className="text-slate-400">
+                                    Update your name and profile details
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <form onSubmit={handleNameUpdate} className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="name" className="text-slate-300">
+                                            Name
+                                        </Label>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                id="name"
+                                                type="text"
+                                                value={name}
+                                                onChange={(e) => setName(e.target.value)}
+                                                placeholder="Enter your name"
+                                                className="bg-slate-900 border-slate-600 text-white"
+                                                required
+                                            />
+                                            <Button
+                                                type="submit"
+                                                disabled={isUpdatingName || !name || name === user?.name}
+                                                className="bg-indigo-600 hover:bg-indigo-700 shrink-0"
+                                            >
+                                                {isUpdatingName ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : (
+                                                    "Save"
+                                                )}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="email" className="text-slate-300">
+                                            Email (Read only)
+                                        </Label>
+                                        <Input
+                                            id="email"
+                                            type="email"
+                                            value={user?.email || ""}
+                                            disabled
+                                            className="bg-slate-900/50 border-slate-700 text-slate-400 cursor-not-allowed"
+                                        />
+                                    </div>
+                                </form>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="bg-slate-800/50 border-slate-700">
+                            <CardHeader>
+                                <CardTitle className="text-white flex items-center gap-2">
+                                    <Lock className="h-5 w-5 text-indigo-400" />
+                                    Change Password
+                                </CardTitle>
+                                <CardDescription className="text-slate-400">
+                                    Update your password to keep your account secure
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <form onSubmit={handlePasswordChange} className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="currentPassword" className="text-slate-300">
+                                            Current Password
+                                        </Label>
+                                        <Input
+                                            id="currentPassword"
+                                            type="password"
+                                            value={currentPassword}
+                                            onChange={(e) => setCurrentPassword(e.target.value)}
+                                            placeholder="Enter current password"
+                                            className="bg-slate-900 border-slate-600 text-white"
+                                            required
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="newPassword" className="text-slate-300">
+                                            New Password
+                                        </Label>
+                                        <Input
+                                            id="newPassword"
+                                            type="password"
+                                            value={newPassword}
+                                            onChange={(e) => setNewPassword(e.target.value)}
+                                            placeholder="Enter new password (min 6 characters)"
+                                            className="bg-slate-900 border-slate-600 text-white"
+                                            required
+                                            minLength={6}
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="confirmPassword" className="text-slate-300">
+                                            Confirm New Password
+                                        </Label>
+                                        <Input
+                                            id="confirmPassword"
+                                            type="password"
+                                            value={confirmPassword}
+                                            onChange={(e) => setConfirmPassword(e.target.value)}
+                                            placeholder="Confirm new password"
+                                            className="bg-slate-900 border-slate-600 text-white"
+                                            required
+                                            minLength={6}
+                                        />
+                                    </div>
+                                    <Button
+                                        type="submit"
+                                        disabled={isLoading || !currentPassword || !newPassword || !confirmPassword}
+                                        className="w-full bg-indigo-600 hover:bg-indigo-700"
+                                    >
+                                        {isLoading ? (
+                                            <>
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                Updating...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle2 className="mr-2 h-4 w-4" />
+                                                Update Password
+                                            </>
+                                        )}
+                                    </Button>
+                                </form>
+                            </CardContent>
+                        </Card>
+                    </div>
                 )}
 
                 {activeTab === "admin" && isAdmin && (

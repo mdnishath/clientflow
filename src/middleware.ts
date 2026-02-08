@@ -1,10 +1,12 @@
-import { auth } from "@/lib/auth";
+import NextAuth from "next-auth";
+import { authConfig } from "@/lib/auth.config";
 import { NextResponse } from "next/server";
+
+// Initialize NextAuth with edge-safe config
+const { auth } = NextAuth(authConfig);
 
 // Routes that require ADMIN role
 const ADMIN_ROUTES = ["/admin"];
-
-
 
 export default auth((req) => {
     const isLoggedIn = !!req.auth;

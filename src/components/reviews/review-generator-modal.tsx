@@ -129,7 +129,7 @@ export function ReviewGeneratorModal({
                             </SelectTrigger>
                             <SelectContent className="bg-slate-800 border-slate-700">
                                 {profiles.length === 0 && !isLoadingProfiles ? (
-                                    <SelectItem value="" disabled>No profiles found</SelectItem>
+                                    <SelectItem value="__no_profiles__" disabled>No profiles found</SelectItem>
                                 ) : (
                                     profiles.map((profile) => (
                                         <SelectItem key={profile.id} value={profile.id}>

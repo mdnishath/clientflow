@@ -51,6 +51,8 @@ import {
     updateReviewStatus,
     optimisticStatusUpdate,
     revertStatusUpdate,
+    optimisticDeleteReview,
+    revertDeleteReview,
     clearReviews,
     type Review,
 } from "@/lib/features/reviewsSlice";
@@ -170,7 +172,7 @@ export default function ProfileDetailPage() {
     const params = useParams();
     const profileId = params.id as string;
     const dispatch = useAppDispatch();
-    const { isAdmin } = useAuth();
+    const { isAdmin, can } = useAuth();
 
     const { data: profile, loading: profileLoading } = useAppSelector((state) => state.profile);
     const { items: reviews, meta, loading: reviewsLoading } = useAppSelector((state) => state.reviews);
@@ -347,12 +349,25 @@ export default function ProfileDetailPage() {
         }
     };
 
+    // Optimistic status change with filter-aware removal
     const handleStatusChange = async (reviewId: string, newStatus: string) => {
         const review = reviews.find((r) => r.id === reviewId);
         if (!review) return;
 
         const oldStatus = review.status;
+
+        // Check if new status will still match the current filter
+        const willMatchFilter = statusFilter === "all" || newStatus === statusFilter;
+
+        // Optimistic update - smooth, no blink
         dispatch(optimisticStatusUpdate({ reviewId, status: newStatus }));
+
+        // If new status doesn't match filter, smoothly remove from list
+        if (!willMatchFilter) {
+            setTimeout(() => {
+                dispatch(optimisticDeleteReview(reviewId));
+            }, 300);
+        }
 
         try {
             const result = await dispatch(updateReviewStatus({ reviewId, status: newStatus }));
@@ -360,10 +375,16 @@ export default function ProfileDetailPage() {
                 toast.success(`Status updated to ${statusConfig[newStatus]?.label}`);
             } else {
                 dispatch(revertStatusUpdate({ reviewId, status: oldStatus }));
+                if (!willMatchFilter) {
+                    dispatch(revertDeleteReview(review));
+                }
                 toast.error("Failed to update status");
             }
         } catch {
             dispatch(revertStatusUpdate({ reviewId, status: oldStatus }));
+            if (!willMatchFilter) {
+                dispatch(revertDeleteReview(review));
+            }
             toast.error("Failed to update status");
         }
     };
@@ -462,32 +483,54 @@ export default function ProfileDetailPage() {
                         )}
                     </div>
                 </div>
-                <Button
-                    variant="outline"
-                    onClick={() => setIsEditProfileOpen(true)}
-                    className="border-slate-700 text-slate-300 hover:text-white"
-                >
-                    <Pencil size={16} className="mr-2" />
-                    Edit Profile
-                </Button>
+                {can.editProfiles && (
+                    <Button
+                        variant="outline"
+                        onClick={() => setIsEditProfileOpen(true)}
+                        className="border-slate-700 text-slate-300 hover:text-white"
+                    >
+                        <Pencil size={16} className="mr-2" />
+                        Edit Profile
+                    </Button>
+                )}
             </div>
 
             {/* Reviews Section Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                    <Star size={20} className="text-yellow-400" />
-                    Reviews ({profile._count.reviews})
-                </h2>
+                <div className="flex items-center gap-4">
+                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Star size={20} className="text-yellow-400" />
+                        Reviews ({profile._count.reviews})
+                    </h2>
+                    {/* Order Progress Display */}
+                    {profile.reviewOrdered > 0 && (
+                        <Badge
+                            variant="outline"
+                            className={`${profile.liveCount >= profile.reviewOrdered
+                                ? 'text-green-400 border-green-400/50 bg-green-500/10'
+                                : 'text-blue-400 border-blue-400/50'
+                                }`}
+                        >
+                            {profile.liveCount >= profile.reviewOrdered
+                                ? '✓ Order Filled'
+                                : `${profile.liveCount}/${profile.reviewOrdered} Posted`
+                            }
+                        </Badge>
+                    )}
+                </div>
                 <div className="flex items-center gap-2">
                     <ExportButton />
-                    <Button
-                        onClick={handleAddReview}
-                        size="sm"
-                        className="bg-indigo-600 hover:bg-indigo-700"
-                    >
-                        <Plus size={16} className="mr-2" />
-                        Add Review
-                    </Button>
+                    {/* Hide Add Review when order is filled */}
+                    {(profile.reviewOrdered === 0 || profile.liveCount < profile.reviewOrdered) && (
+                        <Button
+                            onClick={handleAddReview}
+                            size="sm"
+                            className="bg-indigo-600 hover:bg-indigo-700"
+                        >
+                            <Plus size={16} className="mr-2" />
+                            Add Review
+                        </Button>
+                    )}
                 </div>
             </div>
 
