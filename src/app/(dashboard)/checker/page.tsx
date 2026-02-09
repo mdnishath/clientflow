@@ -269,9 +269,14 @@ export default function CheckerPage() {
         await dispatch(fetchReviews(params));
     }, [dispatch, page, loadMode, statusFilter, checkStatusFilter, profileFilter, search, showArchived]);
 
+    // Clear selection when page OR filters change
+    useEffect(() => {
+        setSelectedIds([]);
+    }, [page, statusFilter, checkStatusFilter, profileFilter, search, showArchived]);
+
+    // Reset page when filters change
     useEffect(() => {
         setPage(1);
-        setSelectedIds([]);
     }, [statusFilter, checkStatusFilter, profileFilter, search, showArchived]);
 
     useEffect(() => {

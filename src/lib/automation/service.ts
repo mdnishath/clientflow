@@ -108,6 +108,12 @@ class AutomationService {
       queue.add(jobs);
       console.log(`📊 AFTER adding to queue (${userId}):`, queue.getStats());
 
+      // Emit initial stats update
+      automationEvents.emit("stats", {
+        userId,
+        stats: queue.getStats()
+      });
+
       // Start processing global loop if not running
       // Note: We use a single processor loop to iterate through ALL user queues
       // This ensures we respect global resource limits (browser instances)
@@ -158,6 +164,12 @@ class AutomationService {
         if (job) {
           didWork = true;
           console.log(`📋 Processing job for user ${userId}: ${job.reviewId}`);
+
+          // Emit stats update (Now processing)
+          automationEvents.emit("stats", {
+            userId,
+            stats: queue.getStats()
+          });
 
           // Process job
           // We limit global concurrency here implicitly by how fast we loop?
