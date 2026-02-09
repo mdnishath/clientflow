@@ -13,6 +13,7 @@ import { Review, CheckResult, AutomationConfig } from "./types";
 export class LiveChecker {
   private browser: Browser | null = null;
   private config: AutomationConfig;
+  private checksCount = 0;
 
   constructor(config: Partial<AutomationConfig> = {}) {
     this.config = {
@@ -72,6 +73,15 @@ export class LiveChecker {
 
     try {
       await this.initialize();
+
+      // Restart browser every 50 checks to prevent memory leaks/zombie processes
+      if (this.checksCount > 50) {
+        console.log("♻ Restarting browser to free resources...");
+        await this.close();
+        await this.initialize();
+        this.checksCount = 0;
+      }
+      this.checksCount++;
 
       if (!this.browser) {
         throw new Error("Browser not initialized");
@@ -204,9 +214,7 @@ export class LiveChecker {
 
   /**
    * Verify if the review is present on the page
-   */
-  /**
-   * Verify if the review is present on the page
+   * STRICT MODE: Only accept specific "Like" or "Share" buttons with data-review-id
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null): Promise<boolean> {
     try {
@@ -227,53 +235,18 @@ export class LiveChecker {
         return false;
       }
 
-      // USER PROVIDED SPECIFIC LOGIC (Refined for Performance & Accuracy):
-      // 1. Disable Screenshots (User request: "screenshot save ba near dorkar nai")
-      // 2. Use class based selector "gllhef" which seems standard for these buttons
-
-      // Check for specific buttons using class + data-review-id
+      // STRICT CHECK: Only look for the specific button class provided by user
       // Selector: button.gllhef[data-review-id]
       const actionButton = page.locator('button.gllhef[data-review-id]').first();
       if (await actionButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-        console.log("✓ Found review via button.gllhef[data-review-id]");
+        console.log("✓ Found review via strict button.gllhef[data-review-id]");
         return true;
       }
 
-      // Check for ANY button with data-review-id and jsaction (General Fallback)
-      const genericActionButton = page.locator('button[data-review-id][jsaction]').first();
-      if (await genericActionButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-        console.log("✓ Found review via generic [data-review-id][jsaction]");
-        return true;
-      }
+      // REMOVED: All other fallbacks (Text, URL, generic buttons) as per user request for "strict check"
+      // This prevents false positives where it sees a generic map page and thinks "Live"
 
-      // 4. Fallback: Text match if provided
-      if (reviewText && reviewText.length > 20) {
-        const snippet = reviewText.substring(0, 50).replace(/\s+/g, ' ').trim();
-        try {
-          const textElement = page.getByText(snippet, { exact: false }).first();
-          if (await textElement.isVisible({ timeout: 2000 })) {
-            console.log(`✓ Found review via text snippet fallback`);
-            return true;
-          }
-        } catch (e) { }
-      }
-
-      // 5. Fallback: URL Check (Restored Strategy 4)
-      // If we are on a valid Place URL and NO error text was found, we assume safety.
-      // This solves the "All Missing" issue when buttons are hidden/changed.
-      const currentUrl = page.url();
-      // Only accept if it looks like a Google Maps place/review link
-      if ((currentUrl.includes("place") || currentUrl.includes("/maps/")) && !currentUrl.includes("error")) {
-        console.log("✓ Found review via URL (Fallback Strategy)");
-        return true;
-      }
-
-      console.log("✗ No specific review buttons found");
-      return false;
-
-      // REMOVED: URL check strategy (too loose)
-
-      console.log("✗ No specific review indicators found");
+      console.log("✗ Strict check failed: No button.gllhef[data-review-id] found");
       return false;
     } catch (error) {
       console.error("Error verifying review presence:", error);
