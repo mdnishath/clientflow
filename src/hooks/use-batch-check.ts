@@ -1,0 +1,381 @@
+/**
+ * Client-side hook for batch processing large-scale live checks
+ *
+ * Handles 1000+ reviews by splitting into batches and processing sequentially
+ */
+
+import { useState, useCallback, useRef } from 'react';
+import { useAppDispatch } from '@/lib/hooks';
+import { startCheckingReviews, updateCheckStatus } from '@/lib/features/reviewsSlice';
+import { toast } from 'sonner';
+
+export interface BatchProgress {
+  currentBatch: number;
+  totalBatches: number;
+  currentBatchProgress: number; // 0-100
+  overallProgress: number; // 0-100
+  processedReviews: number;
+  totalReviews: number;
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'error';
+}
+
+export interface BatchStats {
+  live: number;
+  missing: number;
+  error: number;
+}
+
+interface BatchCheckOptions {
+  batchSize?: number; // Default: 100
+  concurrency?: 3 | 5 | 10; // Default: 5
+  delayBetweenBatches?: number; // Default: 2000ms
+  onProgress?: (progress: BatchProgress, stats: BatchStats) => void;
+  onBatchComplete?: (batchNumber: number, totalBatches: number, stats: BatchStats) => void;
+  onComplete?: (stats: BatchStats) => void;
+}
+
+export function useBatchCheck() {
+  const dispatch = useAppDispatch();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState<BatchProgress>({
+    currentBatch: 0,
+    totalBatches: 0,
+    currentBatchProgress: 0,
+    overallProgress: 0,
+    processedReviews: 0,
+    totalReviews: 0,
+    status: 'idle',
+  });
+  const [stats, setStats] = useState<BatchStats>({
+    live: 0,
+    missing: 0,
+    error: 0,
+  });
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isPausedRef = useRef(false);
+
+  /**
+   * Start batch processing
+   */
+  const startBatchCheck = useCallback(
+    async (reviewIds: string[], options: BatchCheckOptions = {}) => {
+      const {
+        batchSize = 100,
+        concurrency = 5,
+        delayBetweenBatches = 2000,
+        onProgress,
+        onBatchComplete,
+        onComplete,
+      } = options;
+
+      // Reset state
+      setIsProcessing(true);
+      isPausedRef.current = false;
+      abortControllerRef.current = new AbortController();
+
+      const batches = createBatches(reviewIds, batchSize);
+      const totalBatches = batches.length;
+
+      console.log(`📦 Starting batch check: ${reviewIds.length} reviews in ${totalBatches} batches`);
+
+      const accumulatedStats: BatchStats = { live: 0, missing: 0, error: 0 };
+
+      try {
+        // Mark all reviews as CHECKING in Redux
+        dispatch(startCheckingReviews(reviewIds));
+
+        for (let i = 0; i < batches.length; i++) {
+          // Check if aborted
+          if (abortControllerRef.current?.signal.aborted) {
+            console.log('🛑 Batch check aborted by user');
+            setProgress(prev => ({ ...prev, status: 'idle' }));
+            setIsProcessing(false);
+            return;
+          }
+
+          // Wait if paused
+          while (isPausedRef.current && !abortControllerRef.current?.signal.aborted) {
+            await sleep(500);
+          }
+
+          const batchNumber = i + 1;
+          const batch = batches[i];
+
+          console.log(`\n${'='.repeat(80)}\n📦 Processing Batch ${batchNumber}/${totalBatches} (${batch.length} reviews)\n${'='.repeat(80)}`);
+
+          // Update progress
+          const currentProgress: BatchProgress = {
+            currentBatch: batchNumber,
+            totalBatches,
+            currentBatchProgress: 0,
+            overallProgress: Math.round((i / totalBatches) * 100),
+            processedReviews: i * batchSize,
+            totalReviews: reviewIds.length,
+            status: 'running',
+          };
+          setProgress(currentProgress);
+          onProgress?.(currentProgress, accumulatedStats);
+
+          // Process this batch
+          try {
+            const batchStats = await processSingleBatch(
+              batch,
+              concurrency,
+              batchNumber,
+              totalBatches,
+              (batchProgress) => {
+                // Update current batch progress
+                const updatedProgress: BatchProgress = {
+                  ...currentProgress,
+                  currentBatchProgress: batchProgress,
+                  overallProgress: Math.round(
+                    ((i + batchProgress / 100) / totalBatches) * 100
+                  ),
+                  processedReviews: i * batchSize + Math.round((batch.length * batchProgress) / 100),
+                };
+                setProgress(updatedProgress);
+                onProgress?.(updatedProgress, accumulatedStats);
+              }
+            );
+
+            // Accumulate stats
+            accumulatedStats.live += batchStats.live;
+            accumulatedStats.missing += batchStats.missing;
+            accumulatedStats.error += batchStats.error;
+            setStats(accumulatedStats);
+
+            console.log(`✅ Batch ${batchNumber}/${totalBatches} completed: ${batchStats.live} live, ${batchStats.missing} missing, ${batchStats.error} errors`);
+
+            onBatchComplete?.(batchNumber, totalBatches, accumulatedStats);
+
+            // Delay between batches (except last batch)
+            if (i < batches.length - 1 && !abortControllerRef.current?.signal.aborted) {
+              console.log(`⏳ Waiting ${delayBetweenBatches}ms before next batch...`);
+              await sleep(delayBetweenBatches);
+            }
+          } catch (error) {
+            console.error(`❌ Error processing batch ${batchNumber}:`, error);
+            toast.error(`Error in batch ${batchNumber}`);
+            // Continue to next batch instead of failing completely
+          }
+        }
+
+        // All batches completed
+        if (!abortControllerRef.current?.signal.aborted) {
+          console.log('\n✅ All batches completed successfully!');
+          console.log(`📊 Final Stats: ${accumulatedStats.live} live, ${accumulatedStats.missing} missing, ${accumulatedStats.error} errors`);
+
+          setProgress(prev => ({
+            ...prev,
+            currentBatchProgress: 100,
+            overallProgress: 100,
+            processedReviews: reviewIds.length,
+            status: 'completed',
+          }));
+
+          toast.success(
+            `All ${reviewIds.length} reviews checked! ${accumulatedStats.live} live, ${accumulatedStats.missing} missing, ${accumulatedStats.error} errors`
+          );
+
+          onComplete?.(accumulatedStats);
+        }
+      } catch (error) {
+        console.error('❌ Fatal error in batch processing:', error);
+        setProgress(prev => ({ ...prev, status: 'error' }));
+        toast.error('Error during batch processing');
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [dispatch]
+  );
+
+  /**
+   * Process a single batch
+   */
+  const processSingleBatch = async (
+    reviewIds: string[],
+    concurrency: number,
+    batchNumber: number,
+    totalBatches: number,
+    onProgress: (progress: number) => void
+  ): Promise<BatchStats> => {
+    // Start the check via API
+    const response = await fetch('/api/automation/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reviewIds,
+        concurrency,
+        batchInfo: {
+          isBatch: true,
+          batchNumber,
+          totalBatches,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to start batch check');
+    }
+
+    // Poll for progress via SSE or status endpoint
+    return new Promise((resolve, reject) => {
+      let processedCount = 0;
+      const batchStats: BatchStats = { live: 0, missing: 0, error: 0 };
+
+      // Connect to SSE for real-time updates
+      const eventSource = new EventSource('/api/automation/sse');
+
+      eventSource.addEventListener('result', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          // Update Redux
+          dispatch(
+            updateCheckStatus({
+              id: data.reviewId,
+              checkStatus: data.status,
+              lastCheckedAt: data.completedAt,
+            })
+          );
+
+          // Update batch stats
+          if (data.status === 'LIVE') batchStats.live++;
+          else if (data.status === 'MISSING') batchStats.missing++;
+          else if (data.status === 'ERROR') batchStats.error++;
+
+          processedCount++;
+
+          // Update progress
+          const progress = Math.round((processedCount / reviewIds.length) * 100);
+          onProgress(progress);
+        } catch (error) {
+          console.error('Error parsing SSE result:', error);
+        }
+      });
+
+      eventSource.addEventListener('stats', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          // Check if batch is complete
+          if (data.stats.completed >= reviewIds.length) {
+            eventSource.close();
+            resolve(batchStats);
+          }
+        } catch (error) {
+          console.error('Error parsing SSE stats:', error);
+        }
+      });
+
+      eventSource.onerror = (error) => {
+        console.error('SSE error:', error);
+        eventSource.close();
+
+        // Fallback: poll status endpoint
+        pollBatchStatus(reviewIds.length, batchStats, onProgress, resolve, reject);
+      };
+
+      // Timeout after 10 minutes per batch
+      setTimeout(() => {
+        eventSource.close();
+        reject(new Error('Batch processing timeout'));
+      }, 600000);
+    });
+  };
+
+  /**
+   * Fallback polling for batch status
+   */
+  const pollBatchStatus = async (
+    expectedCount: number,
+    batchStats: BatchStats,
+    onProgress: (progress: number) => void,
+    resolve: (stats: BatchStats) => void,
+    reject: (error: Error) => void
+  ) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch('/api/automation/status');
+        const data = await response.json();
+
+        const completed = data.stats.completed || 0;
+        const progress = Math.round((completed / expectedCount) * 100);
+        onProgress(progress);
+
+        // Update batch stats from recent results
+        const resultsResponse = await fetch('/api/automation/status');
+        const resultsData = await resultsResponse.json();
+
+        if (resultsData.recentResults) {
+          batchStats.live = resultsData.recentResults.filter((r: any) => r.status === 'LIVE').length;
+          batchStats.missing = resultsData.recentResults.filter((r: any) => r.status === 'MISSING').length;
+          batchStats.error = resultsData.recentResults.filter((r: any) => r.status === 'ERROR').length;
+        }
+
+        if (completed >= expectedCount || data.stats.pending + data.stats.processing === 0) {
+          clearInterval(pollInterval);
+          resolve(batchStats);
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+        clearInterval(pollInterval);
+        reject(error as Error);
+      }
+    }, 2000);
+  };
+
+  /**
+   * Pause batch processing
+   */
+  const pause = useCallback(() => {
+    isPausedRef.current = true;
+    setProgress(prev => ({ ...prev, status: 'paused' }));
+    toast.info('Batch processing paused (will complete current batch first)');
+  }, []);
+
+  /**
+   * Resume batch processing
+   */
+  const resume = useCallback(() => {
+    isPausedRef.current = false;
+    setProgress(prev => ({ ...prev, status: 'running' }));
+    toast.success('Batch processing resumed');
+  }, []);
+
+  /**
+   * Stop batch processing
+   */
+  const stop = useCallback(() => {
+    abortControllerRef.current?.abort();
+    isPausedRef.current = false;
+    setProgress(prev => ({ ...prev, status: 'idle' }));
+    setIsProcessing(false);
+    toast.warning('Batch processing stopped');
+  }, []);
+
+  return {
+    isProcessing,
+    progress,
+    stats,
+    startBatchCheck,
+    pause,
+    resume,
+    stop,
+  };
+}
+
+// Helper functions
+
+function createBatches(items: string[], batchSize: number): string[][] {
+  const batches: string[][] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    batches.push(items.slice(i, i + batchSize));
+  }
+  return batches;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}

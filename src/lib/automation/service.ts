@@ -57,47 +57,85 @@ class AutomationService {
 
   /**
    * Start checking reviews for a specific user
+   * Supports batch metadata for large-scale operations
    */
-  async startChecks(reviewIds: string[], userId: string): Promise<{ success: boolean; message: string }> {
+  async startChecks(
+    reviewIds: string[],
+    userId: string,
+    options?: {
+      isBatch?: boolean;
+      batchNumber?: number;
+      totalBatches?: number;
+    }
+  ): Promise<{ success: boolean; message: string }> {
     try {
-      console.log("=".repeat(80));
-      console.log(`🎬 START CHECKS CALLED for user ${userId} (${reviewIds.length} reviews)`);
+      const batchInfo = options?.isBatch
+        ? ` (Batch ${options.batchNumber}/${options.totalBatches})`
+        : '';
 
-      // Fetch reviews from database
-      const reviews = await prisma.review.findMany({
-        where: {
-          id: { in: reviewIds },
-          reviewLiveLink: { not: null },
-          // Enforce ownership check strictly? 
-          // Ideally yes, but RBAC is handled at API layer.
-          // Adding userId check here is safer.
-          // For ADMIN, they might trigger checks for any client. 
-          // So we trust the caller (API route) to have verified permissions.
-        },
-        select: {
-          id: true,
-          reviewLiveLink: true,
-          profileId: true,
-          reviewText: true,
-          profile: {
+      console.log("=".repeat(80));
+      console.log(`🎬 START CHECKS CALLED for user ${userId} (${reviewIds.length} reviews)${batchInfo}`);
+
+      // Fetch reviews from database in chunks to prevent memory issues
+      // For large batches (>500), use pagination
+      const CHUNK_SIZE = 500;
+      let allReviews: any[] = [];
+
+      if (reviewIds.length > CHUNK_SIZE) {
+        console.log(`📊 Large batch detected, fetching in chunks of ${CHUNK_SIZE}...`);
+        for (let i = 0; i < reviewIds.length; i += CHUNK_SIZE) {
+          const chunk = reviewIds.slice(i, i + CHUNK_SIZE);
+          const chunkReviews = await prisma.review.findMany({
+            where: {
+              id: { in: chunk },
+              reviewLiveLink: { not: null },
+            },
             select: {
-              businessName: true,
+              id: true,
+              reviewLiveLink: true,
+              profileId: true,
+              reviewText: true,
+              profile: {
+                select: {
+                  businessName: true,
+                }
+              }
+            }
+          });
+          allReviews = allReviews.concat(chunkReviews);
+          console.log(`  ✓ Fetched chunk ${Math.floor(i / CHUNK_SIZE) + 1}: ${chunkReviews.length} reviews`);
+        }
+      } else {
+        allReviews = await prisma.review.findMany({
+          where: {
+            id: { in: reviewIds },
+            reviewLiveLink: { not: null },
+          },
+          select: {
+            id: true,
+            reviewLiveLink: true,
+            profileId: true,
+            reviewText: true,
+            profile: {
+              select: {
+                businessName: true,
+              }
             }
           }
-        }
-      });
+        });
+      }
 
-      if (reviews.length === 0) {
+      if (allReviews.length === 0) {
         return {
           success: false,
           message: "No valid reviews found with live links",
         };
       }
 
-      console.log(`✅ Found ${reviews.length} valid reviews`);
+      console.log(`✅ Found ${allReviews.length} valid reviews${batchInfo}`);
 
       // Add to user's queue
-      const jobs: QueueJob[] = reviews.map((review) => ({
+      const jobs: QueueJob[] = allReviews.map((review) => ({
         reviewId: review.id,
         review: review as Review,
         retryCount: 0,
@@ -108,15 +146,17 @@ class AutomationService {
       queue.add(jobs);
       console.log(`📊 AFTER adding to queue (${userId}):`, queue.getStats());
 
-      // Emit initial stats update
+      // Emit initial stats update with batch info
       automationEvents.emit("stats", {
         userId,
-        stats: queue.getStats()
+        stats: queue.getStats(),
+        batchInfo: options?.isBatch ? {
+          current: options.batchNumber,
+          total: options.totalBatches
+        } : undefined
       });
 
       // Start processing global loop if not running
-      // Note: We use a single processor loop to iterate through ALL user queues
-      // This ensures we respect global resource limits (browser instances)
       if (!this.isProcessing) {
         console.log("🚀 Starting global queue processor");
         this.processQueues();
@@ -126,7 +166,7 @@ class AutomationService {
 
       return {
         success: true,
-        message: `${reviews.length} review(s) added to queue`,
+        message: `${allReviews.length} review(s) added to queue${batchInfo}`,
       };
     } catch (error) {
       console.error("Error starting checks:", error);
@@ -282,6 +322,52 @@ class AutomationService {
   getRecentResults(userId: string) {
     const queue = this.queues.get(userId);
     return queue ? queue.getRecentResults() : [];
+  }
+
+  /**
+   * Wait for user's queue to complete (for batch processing)
+   */
+  async waitForCompletion(userId: string, timeoutMs: number = 300000): Promise<boolean> {
+    const startTime = Date.now();
+    const queue = this.queues.get(userId);
+
+    if (!queue) {
+      return true; // No queue means nothing to wait for
+    }
+
+    console.log(`⏳ Waiting for queue completion (userId: ${userId}, timeout: ${timeoutMs}ms)...`);
+
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        const queue = this.queues.get(userId);
+
+        // Check if queue is empty or stopped or timeout
+        if (!queue || queue.isEmpty() || queue.getStats().isStopped) {
+          clearInterval(checkInterval);
+          console.log(`✅ Queue completed for user ${userId}`);
+          resolve(true);
+          return;
+        }
+
+        // Check timeout
+        if (Date.now() - startTime > timeoutMs) {
+          clearInterval(checkInterval);
+          console.log(`⏰ Queue wait timeout for user ${userId}`);
+          resolve(false);
+          return;
+        }
+      }, 500); // Check every 500ms
+    });
+  }
+
+  /**
+   * Restart browser (useful between batches)
+   */
+  async restartBrowser(): Promise<void> {
+    console.log("♻ Restarting browser to free resources...");
+    await this.checker.close();
+    await this.checker.initialize();
+    console.log("✅ Browser restarted successfully");
   }
 
   // ... helper DB update methods (unchanged) ...

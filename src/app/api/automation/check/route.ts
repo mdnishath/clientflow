@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { reviewIds, concurrency } = body;
+    const { reviewIds, concurrency, batchInfo } = body;
 
     // Validation
     if (!Array.isArray(reviewIds) || reviewIds.length === 0) {
@@ -34,8 +34,22 @@ export async function POST(request: NextRequest) {
       automationService.updateConcurrency(concurrency);
     }
 
-    // Start automation
-    const result = await automationService.startChecks(reviewIds, session.user.id);
+    // Restart browser between batches if this is a batch operation
+    if (batchInfo?.isBatch && batchInfo.batchNumber > 1) {
+      console.log(`♻ Restarting browser for batch ${batchInfo.batchNumber}/${batchInfo.totalBatches}`);
+      await automationService.restartBrowser();
+    }
+
+    // Start automation with batch options
+    const result = await automationService.startChecks(
+      reviewIds,
+      session.user.id,
+      batchInfo?.isBatch ? {
+        isBatch: true,
+        batchNumber: batchInfo.batchNumber,
+        totalBatches: batchInfo.totalBatches
+      } : undefined
+    );
 
     if (!result.success) {
       return NextResponse.json(

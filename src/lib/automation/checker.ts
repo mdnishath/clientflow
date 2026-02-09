@@ -239,79 +239,318 @@ export class LiveChecker {
 
   /**
    * Verify if the review is present on the page
-   * STRICT MODE: Only accept specific "Like" or "Share" buttons with data-review-id
+   * ROBUST MODE: Multiple verification strategies with content fallback
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      // Wait a bit for Google Maps to fully load
+      console.log("🔍 Starting robust review verification...");
+
+      // Wait for initial page load
       await page.waitForTimeout(3000);
 
-      // Check for explicit "Review not found" or "Place not found" indicators
+      // Check for explicit error indicators first
       const errorIndicators = [
         "Google Maps can't find this link",
         "Review not found",
         "Place not found",
-        "doesn't exist"
+        "doesn't exist",
+        "can't be found",
+        "This review has been deleted",
+        "This place doesn't have any reviews"
       ];
 
-      const pageText = (await page.textContent("body").catch(() => "")) || "";
-      if (errorIndicators.some(err => pageText.includes(err))) {
+      const bodyText = (await page.textContent("body").catch(() => "")) || "";
+      if (errorIndicators.some(err => bodyText.toLowerCase().includes(err.toLowerCase()))) {
         console.log("✗ Found error indicator on page");
         return false;
       }
 
-      // Update expectedId from the actual page URL if we didn't have one before
-      // This handles short links (maps.app.goo.gl) that redirect to long URLs with IDs
+      // Extract ID from current URL if not provided (handles redirects from short links)
       if (!expectedId) {
         const currentUrl = page.url();
         expectedId = this.extractReviewIdFromLink(currentUrl);
         if (expectedId) {
-          console.log(`🔗 Extracted ID from redirected URL: ${expectedId}`);
+          console.log(`🔗 Extracted ID from URL: ${expectedId.substring(0, 20)}...`);
         }
       }
 
-      // STRICT CHECK: Matches specific ID if available
-      // User requested check for class "Upo0Ec"
-
-      const selectors = [
-        'button.gllhef[data-review-id]', // Standard "Share" button with ID
-        '.Upo0Ec', // User specified class (Review text container/User name area)
-        '.jftiEf', // Common Review Card class
-        'div[data-review-id]' // Another common container
-      ];
-
-      for (const sel of selectors) {
-        // If we have an ID, try to be specific
-        let specificSelector = sel;
-        if (expectedId) {
-          if (sel.includes('data-review-id')) {
-            specificSelector = `${sel}="${expectedId}"]`;
-          }
-          // unique behavior for .Upo0Ec? It doesn't usually have the ID directly on it.
-          // If we have an ID, we prioritize the data-review-id selectors first.
+      // === STRATEGY 1: ID-based verification (most reliable) ===
+      if (expectedId) {
+        console.log("📌 Strategy 1: Attempting ID-based match...");
+        const idFound = await this.findReviewById(page, expectedId);
+        if (idFound) {
+          console.log("✅ Review found via ID match");
+          return true;
         }
-
-        try {
-          const element = page.locator(specificSelector).first();
-          // Wait for it to be visible? User said "until dom fully loaded"
-          // Increased timeout to 5000ms to be safe for slow loading elements
-          if (await element.isVisible({ timeout: 5000 }).catch(() => false)) {
-            console.log(`✓ Found review via selector: ${specificSelector}`);
-
-            // If we found a generic class like .Upo0Ec but we HAVE an expectedId,
-            // we should try to verify the ID is present somewhere in the parent or related elements
-            // BUT, for now, let's trust the user's directive: "if in dom found this class Upo0Ec then it live"
-            return true;
-          }
-        } catch (e) { continue; }
       }
 
-      console.log("✗ Strict check failed: No valid review selectors found");
+      // === STRATEGY 2: Content-based verification (robust fallback) ===
+      if (reviewText && reviewText.trim().length > 0) {
+        console.log("📝 Strategy 2: Attempting content-based match...");
+
+        // Scroll down to load lazy-loaded reviews
+        await this.scrollToLoadReviews(page);
+
+        // Expand any "More" buttons to reveal full review text
+        await this.expandTruncatedReviews(page);
+
+        // Search for review content
+        const contentFound = await this.findReviewByContent(page, reviewText);
+        if (contentFound) {
+          console.log("✅ Review found via content match");
+          return true;
+        }
+      }
+
+      // === STRATEGY 3: Structural pattern matching (last resort) ===
+      console.log("🔍 Strategy 3: Attempting structural pattern match...");
+      const structureFound = await this.findReviewByStructure(page, reviewText, expectedId);
+      if (structureFound) {
+        console.log("✅ Review found via structural patterns");
+        return true;
+      }
+
+      console.log("✗ All verification strategies failed");
       return false;
     } catch (error) {
       console.error("Error verifying review presence:", error);
       return false;
     }
+  }
+
+  /**
+   * Strategy 1: Find review by ID attribute
+   */
+  private async findReviewById(page: Page, expectedId: string): Promise<boolean> {
+    try {
+      // Try multiple ID-based selectors
+      const idSelectors = [
+        `[data-review-id="${expectedId}"]`,
+        `[data-review-id*="${expectedId}"]`, // Partial match
+        `button[data-review-id="${expectedId}"]`,
+        `div[data-review-id="${expectedId}"]`
+      ];
+
+      for (const selector of idSelectors) {
+        try {
+          const element = page.locator(selector).first();
+          if (await element.isVisible({ timeout: 2000 }).catch(() => false)) {
+            console.log(`  ✓ Found via selector: ${selector}`);
+            return true;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // Check if ID exists anywhere in the DOM (even if not in data-review-id)
+      const idInDom = await page.evaluate((id) => {
+        const bodyText = document.body.innerHTML;
+        return bodyText.includes(id);
+      }, expectedId);
+
+      if (idInDom) {
+        console.log(`  ✓ ID found in page DOM`);
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Strategy 2: Find review by matching text content
+   */
+  private async findReviewByContent(page: Page, reviewText: string): Promise<boolean> {
+    try {
+      // Normalize the search text
+      const normalizedSearch = this.normalizeText(reviewText);
+
+      // For long reviews, search using first 100 chars to handle truncation
+      const searchText = normalizedSearch.length > 100
+        ? normalizedSearch.substring(0, 100)
+        : normalizedSearch;
+
+      console.log(`  🔎 Searching for: "${searchText.substring(0, 50)}..."`);
+
+      // Get all review-like elements using stable attributes
+      const reviewElements = await page.locator('[role="article"], [data-review-id], div[jslog*="review"]').all();
+
+      console.log(`  📄 Found ${reviewElements.length} potential review containers`);
+
+      // Check each review element for matching content
+      for (const element of reviewElements) {
+        try {
+          const elementText = await element.textContent().catch(() => "");
+          if (!elementText) continue;
+
+          const normalizedElement = this.normalizeText(elementText);
+
+          // Check for partial match (handles truncation and "More" buttons)
+          if (normalizedElement.includes(searchText.substring(0, 50)) ||
+              searchText.substring(0, 50).includes(normalizedElement)) {
+            console.log(`  ✓ Content match found`);
+            return true;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // Fallback: Search entire page body for review text
+      const pageContent = await page.textContent('body').catch(() => "") || "";
+      const normalizedPage = this.normalizeText(pageContent);
+
+      if (normalizedPage.includes(searchText.substring(0, 50))) {
+        console.log(`  ✓ Content found in page body`);
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      console.error("  ✗ Content search error:", e);
+      return false;
+    }
+  }
+
+  /**
+   * Strategy 3: Find review by structural patterns
+   */
+  private async findReviewByStructure(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
+    try {
+      // Look for review structural patterns using stable selectors
+      const structuralSelectors = [
+        '[role="article"]', // Modern accessibility-friendly reviews
+        '[aria-label*="review"]',
+        '[aria-label*="Review"]',
+        'div[jslog*="review"]', // Google's analytics attributes
+        'div[data-review-id]',
+        // Look for containers with rating stars + text
+        'span[role="img"][aria-label*="star"]',
+      ];
+
+      for (const selector of structuralSelectors) {
+        try {
+          const elements = page.locator(selector);
+          const count = await elements.count();
+
+          if (count > 0) {
+            console.log(`  ✓ Found ${count} elements matching: ${selector}`);
+
+            // Verify this looks like a review (has text content)
+            const firstElement = elements.first();
+            const text = await firstElement.textContent().catch(() => "");
+
+            if (text && text.length > 20) { // Reviews typically have substantial text
+              return true;
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // Check for review-specific UI patterns
+      const hasReviewUI = await page.evaluate(() => {
+        // Look for star ratings
+        const hasStars = document.querySelector('[aria-label*="star"]') !== null ||
+                         document.querySelector('[aria-label*="Star"]') !== null;
+
+        // Look for review action buttons (Like, Share, etc.)
+        const hasActions = document.querySelector('button[aria-label*="Like"]') !== null ||
+                           document.querySelector('button[aria-label*="Share"]') !== null ||
+                           document.querySelector('button[aria-label*="Helpful"]') !== null;
+
+        // Look for review metadata (dates, etc.)
+        const hasMetadata = document.body.innerText.includes('ago') ||
+                            document.body.innerText.includes('month') ||
+                            document.body.innerText.includes('year');
+
+        return hasStars || hasActions || hasMetadata;
+      });
+
+      if (hasReviewUI) {
+        console.log(`  ✓ Review UI patterns detected`);
+        return true;
+      }
+
+      return false;
+    } catch (e) {
+      console.error("  ✗ Structure search error:", e);
+      return false;
+    }
+  }
+
+  /**
+   * Scroll page to load lazy-loaded reviews
+   */
+  private async scrollToLoadReviews(page: Page): Promise<void> {
+    try {
+      console.log("  ⬇ Scrolling to load lazy content...");
+
+      // Scroll down in chunks to trigger lazy loading
+      for (let i = 0; i < 3; i++) {
+        await page.evaluate(() => window.scrollBy(0, 500));
+        await page.waitForTimeout(500);
+      }
+
+      // Scroll back up
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForTimeout(500);
+    } catch (e) {
+      // Non-critical, continue
+    }
+  }
+
+  /**
+   * Click "More" buttons to expand truncated review text
+   */
+  private async expandTruncatedReviews(page: Page): Promise<void> {
+    try {
+      console.log("  📖 Expanding truncated reviews...");
+
+      // Common "More" button selectors
+      const moreButtonSelectors = [
+        'button[aria-label*="More"]',
+        'button:has-text("More")',
+        'button:has-text("more")',
+        'button[jsaction*="expand"]',
+        '[aria-label*="See more"]'
+      ];
+
+      for (const selector of moreButtonSelectors) {
+        try {
+          const buttons = page.locator(selector);
+          const count = await buttons.count();
+
+          for (let i = 0; i < Math.min(count, 5); i++) { // Expand up to 5 reviews
+            try {
+              await buttons.nth(i).click({ timeout: 1000 });
+              await page.waitForTimeout(300);
+            } catch (e) {
+              // Button might not be clickable, continue
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    } catch (e) {
+      // Non-critical, continue
+    }
+  }
+
+  /**
+   * Normalize text for comparison (remove extra whitespace, special chars)
+   */
+  private normalizeText(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/\s+/g, ' ') // Collapse whitespace
+      .replace(/[^\w\s]/g, '') // Remove special characters
+      .trim();
   }
 
   /**

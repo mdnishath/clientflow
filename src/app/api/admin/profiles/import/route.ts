@@ -136,11 +136,7 @@ export async function POST(request: NextRequest) {
     }
 }
 
-// Increase body size limit for bulk import
-export const config = {
-    api: {
-        bodyParser: {
-            sizeLimit: '10mb',
-        },
-    },
-};
+// Route segment config for App Router
+// Allow longer execution time for bulk imports
+export const maxDuration = 60; // 60 seconds
+export const runtime = 'nodejs'; // Use Node.js runtime for better performance
