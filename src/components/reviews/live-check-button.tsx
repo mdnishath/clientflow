@@ -84,7 +84,7 @@ export function LiveCheckButton({
       await startBatchCheck(reviewIds, {
         batchSize: 100,
         concurrency,
-        delayBetweenBatches: 2000,
+        delayBetweenBatches: 500,
         onComplete: (finalStats) => {
           setShowBatchDialog(false);
           if (onCheckComplete) {

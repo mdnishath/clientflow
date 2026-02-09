@@ -430,7 +430,7 @@ export default function CheckerPage() {
             await startBatchCheck(selectedIds, {
                 batchSize: 100,
                 concurrency: threadCount as 3 | 5 | 10,
-                delayBetweenBatches: 2000,
+                delayBetweenBatches: 500,
                 onComplete: () => {
                     fetchReviewsData();
                 },
@@ -455,7 +455,7 @@ export default function CheckerPage() {
             await startBatchCheck(allIds, {
                 batchSize: 100,
                 concurrency: threadCount as 3 | 5 | 10,
-                delayBetweenBatches: 2000,
+                delayBetweenBatches: 500,
                 onComplete: () => {
                     fetchReviewsData();
                 },
