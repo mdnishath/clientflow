@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AutoFillButton } from "@/components/dashboard/auto-fill-button";
 import { DeletePendingButton } from "@/components/dashboard/delete-pending-button";
+import { UpdateLimitButton } from "@/components/dashboard/update-limit-button";
 import Link from "next/link";
 
 interface ReviewWithProfile {
@@ -276,6 +277,7 @@ export default async function DashboardPage() {
                 </div>
                 {data.isAdmin && (
                     <div className="flex gap-3">
+                        <UpdateLimitButton />
                         <DeletePendingButton />
                         <AutoFillButton />
                     </div>
