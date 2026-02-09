@@ -42,6 +42,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { ExportButton } from "@/components/reviews/export-button";
 import { ReviewForm } from "@/components/reviews/review-form";
 import { useLiveCheck } from "@/hooks/use-live-check";
+import { useBatchCheck } from "@/hooks/use-batch-check";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
     fetchReviews,
@@ -203,7 +204,7 @@ export default function CheckerPage() {
 
     const isLoading = loading === "pending";
 
-    // Live Check Hook
+    // Live Check Hook (for small batches <=200)
     const {
         stats,
         status: checkStatus,
@@ -214,10 +215,18 @@ export default function CheckerPage() {
         reset
     } = useLiveCheck();
 
+    // Batch Check Hook (for large batches >200)
+    const {
+        isProcessing: isBatchProcessing,
+        progress: batchProgress,
+        stats: batchStats,
+        startBatchCheck,
+    } = useBatchCheck();
+
     // Lock Management
     const { isLocked, getLock, acquireLock, releaseLock, currentUser } = useReviewLocks();
 
-    const isChecking = checkStatus === "STARTING" || checkStatus === "RUNNING";
+    const isChecking = checkStatus === "STARTING" || checkStatus === "RUNNING" || isBatchProcessing;
 
     // Client-side filtering to ensure real-time updates respect the current view
     // MOVED here to avoid ReferenceError (must be after state init)
@@ -403,21 +412,59 @@ export default function CheckerPage() {
         }
     };
 
-    // Live Check functions
-    const handleCheckSelected = () => {
+    // Live Check functions with automatic batch detection
+    const BATCH_THRESHOLD = 200; // Use batch processing for >200 reviews
+
+    const handleCheckSelected = async () => {
         if (selectedIds.length === 0) {
             toast.error("No reviews selected");
             return;
         }
-        startChecks(selectedIds, threadCount);
-        toast.success(`Checking ${selectedIds.length} reviews with ${threadCount} threads...`);
+
+        // Detect if we need batch processing
+        if (selectedIds.length > BATCH_THRESHOLD) {
+            toast.info(`Processing ${selectedIds.length} reviews in batches of 100`, {
+                description: "This prevents browser hangs and ensures smooth processing"
+            });
+
+            await startBatchCheck(selectedIds, {
+                batchSize: 100,
+                concurrency: threadCount as 3 | 5 | 10,
+                delayBetweenBatches: 2000,
+                onComplete: () => {
+                    fetchReviewsData();
+                },
+            });
+        } else {
+            // Standard processing for small batches
+            startChecks(selectedIds, threadCount);
+            toast.success(`Checking ${selectedIds.length} reviews with ${threadCount} threads...`);
+        }
     };
 
-    const handleCheckAll = () => {
+    const handleCheckAll = async () => {
         const allIds = reviews.map((r) => r.id);
         setSelectedIds(allIds);
-        startChecks(allIds, threadCount);
-        toast.success(`Checking ${allIds.length} reviews with ${threadCount} threads...`);
+
+        // Detect if we need batch processing
+        if (allIds.length > BATCH_THRESHOLD) {
+            toast.info(`Processing ${allIds.length} reviews in batches of 100`, {
+                description: "This prevents browser hangs and ensures smooth processing"
+            });
+
+            await startBatchCheck(allIds, {
+                batchSize: 100,
+                concurrency: threadCount as 3 | 5 | 10,
+                delayBetweenBatches: 2000,
+                onComplete: () => {
+                    fetchReviewsData();
+                },
+            });
+        } else {
+            // Standard processing for small batches
+            startChecks(allIds, threadCount);
+            toast.success(`Checking ${allIds.length} reviews with ${threadCount} threads...`);
+        }
     };
 
     const handleEditReview = (review: Review) => {
@@ -911,6 +958,56 @@ export default function CheckerPage() {
                 onStop={stopChecks}
                 onReset={reset}
             />
+
+            {/* Batch Processing Progress (for large batches >200) */}
+            {isBatchProcessing && (
+                <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-4 w-96">
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-semibold text-white flex items-center gap-2">
+                                <Loader2 className="animate-spin text-indigo-400" size={16} />
+                                Batch Processing
+                            </h3>
+                            <span className="text-xs text-slate-400">
+                                Batch {batchProgress.currentBatch} of {batchProgress.totalBatches}
+                            </span>
+                        </div>
+
+                        {/* Overall Progress */}
+                        <div>
+                            <div className="flex justify-between text-xs mb-1">
+                                <span className="text-slate-400">Overall Progress</span>
+                                <span className="text-white font-medium">{batchProgress.overallProgress}%</span>
+                            </div>
+                            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-indigo-500 transition-all duration-300"
+                                    style={{ width: `${batchProgress.overallProgress}%` }}
+                                />
+                            </div>
+                            <div className="text-xs text-slate-500 mt-1">
+                                {batchProgress.processedReviews} / {batchProgress.totalReviews} reviews
+                            </div>
+                        </div>
+
+                        {/* Stats */}
+                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-700">
+                            <div className="text-center">
+                                <div className="text-lg font-bold text-emerald-400">{batchStats.live}</div>
+                                <div className="text-xs text-slate-400">Live</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-lg font-bold text-red-400">{batchStats.missing}</div>
+                                <div className="text-xs text-slate-400">Missing</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-lg font-bold text-orange-400">{batchStats.error}</div>
+                                <div className="text-xs text-slate-400">Errors</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Review Form */}
             <ReviewForm

@@ -239,11 +239,11 @@ export class LiveChecker {
 
   /**
    * Verify if the review is present on the page
-   * ROBUST MODE: Multiple verification strategies with content fallback
+   * PRIMARY STRATEGY: Check for unique class 'Upo0Ec' which only exists in LIVE reviews
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      console.log("🔍 Starting robust review verification...");
+      console.log("🔍 Starting review verification...");
 
       // Wait for initial page load
       await page.waitForTimeout(3000);
@@ -265,55 +265,66 @@ export class LiveChecker {
         return false;
       }
 
-      // Extract ID from current URL if not provided (handles redirects from short links)
-      if (!expectedId) {
-        const currentUrl = page.url();
-        expectedId = this.extractReviewIdFromLink(currentUrl);
-        if (expectedId) {
-          console.log(`🔗 Extracted ID from URL: ${expectedId.substring(0, 20)}...`);
-        }
+      // === PRIMARY STRATEGY: Check for unique class 'Upo0Ec' ===
+      // This class ONLY exists in LIVE reviews (in share div)
+      // Most reliable method - no need to check stylesheet
+      console.log("🎯 PRIMARY STRATEGY: Checking for unique class 'Upo0Ec'...");
+      const hasUniqueClass = await this.checkForUniqueClass(page);
+      if (hasUniqueClass) {
+        console.log("✅ Review is LIVE - Found unique class 'Upo0Ec'");
+        return true;
+      } else {
+        console.log("✗ Review is MISSING - Unique class 'Upo0Ec' not found");
+        return false;
       }
 
-      // === STRATEGY 1: ID-based verification (most reliable) ===
-      if (expectedId) {
-        console.log("📌 Strategy 1: Attempting ID-based match...");
-        const idFound = await this.findReviewById(page, expectedId);
-        if (idFound) {
-          console.log("✅ Review found via ID match");
-          return true;
-        }
-      }
+      // Note: The unique class check is the definitive method.
+      // Fallback strategies removed as they are less reliable.
+    } catch (error) {
+      console.error("Error verifying review presence:", error);
+      return false;
+    }
+  }
 
-      // === STRATEGY 2: Content-based verification (robust fallback) ===
-      if (reviewText && reviewText.trim().length > 0) {
-        console.log("📝 Strategy 2: Attempting content-based match...");
+  /**
+   * Check for the unique class 'Upo0Ec' that only exists in LIVE reviews
+   * This class is in the share div inside the HTML body
+   */
+  private async checkForUniqueClass(page: Page): Promise<boolean> {
+    try {
+      // Method 1: Check if element with class exists using Playwright selector
+      const uniqueElement = page.locator('.Upo0Ec').first();
+      const isVisible = await uniqueElement.isVisible({ timeout: 2000 }).catch(() => false);
 
-        // Scroll down to load lazy-loaded reviews
-        await this.scrollToLoadReviews(page);
-
-        // Expand any "More" buttons to reveal full review text
-        await this.expandTruncatedReviews(page);
-
-        // Search for review content
-        const contentFound = await this.findReviewByContent(page, reviewText);
-        if (contentFound) {
-          console.log("✅ Review found via content match");
-          return true;
-        }
-      }
-
-      // === STRATEGY 3: Structural pattern matching (last resort) ===
-      console.log("🔍 Strategy 3: Attempting structural pattern match...");
-      const structureFound = await this.findReviewByStructure(page, reviewText, expectedId);
-      if (structureFound) {
-        console.log("✅ Review found via structural patterns");
+      if (isVisible) {
+        console.log("  ✓ Found .Upo0Ec element (visible)");
         return true;
       }
 
-      console.log("✗ All verification strategies failed");
+      // Method 2: Check in DOM even if not visible (more thorough)
+      const existsInDom = await page.evaluate(() => {
+        const elements = document.querySelectorAll('.Upo0Ec');
+        return elements.length > 0;
+      });
+
+      if (existsInDom) {
+        console.log("  ✓ Found .Upo0Ec in DOM");
+        return true;
+      }
+
+      // Method 3: Check in entire HTML source (most thorough)
+      const htmlContent = await page.content();
+      const hasClassInHtml = htmlContent.includes('Upo0Ec');
+
+      if (hasClassInHtml) {
+        console.log("  ✓ Found 'Upo0Ec' in HTML source");
+        return true;
+      }
+
+      console.log("  ✗ Class 'Upo0Ec' not found (Review is MISSING)");
       return false;
     } catch (error) {
-      console.error("Error verifying review presence:", error);
+      console.error("  ✗ Error checking for unique class:", error);
       return false;
     }
   }
