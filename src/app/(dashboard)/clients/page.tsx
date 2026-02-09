@@ -310,9 +310,9 @@ export default function ClientsPage() {
             {/* Filters + Bulk Actions */}
             <Card className="bg-slate-800/50 border-slate-700 mb-6">
                 <CardContent className="p-4">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div className="flex flex-col sm:flex-row gap-3 flex-1">
-                            <div className="relative flex-1 max-w-md">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex flex-col sm:flex-row gap-3 w-full">
+                            <div className="relative flex-1">
                                 <Search
                                     className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
                                     size={16}
@@ -321,17 +321,16 @@ export default function ClientsPage() {
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
                                     placeholder="Search clients..."
-                                    className="pl-9 bg-slate-800 border-slate-700 text-white"
+                                    className="pl-9 bg-slate-800 border-slate-700 text-white w-full"
                                 />
                             </div>
                             <Button
                                 variant={showArchived ? "secondary" : "outline"}
                                 onClick={() => setShowArchived(!showArchived)}
-                                className={
-                                    showArchived
+                                className={`w-full sm:w-auto ${showArchived
                                         ? "bg-amber-600/20 text-amber-400 border-amber-600/50"
                                         : "border-slate-700 text-slate-400 hover:text-white"
-                                }
+                                    }`}
                             >
                                 <Archive size={16} className="mr-2" />
                                 {showArchived ? "Archived" : "Show Archived"}

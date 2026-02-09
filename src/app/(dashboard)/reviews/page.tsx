@@ -604,7 +604,7 @@ export default function ReviewsPage() {
                         Manage all your reviews across profiles
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
                     <ExportButton />
                     {can.createReviews && (
                         <>
@@ -660,14 +660,14 @@ export default function ReviewsPage() {
             )}
 
             {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-4">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
+                <div className="relative col-span-2 sm:col-span-1 sm:flex-1 min-w-[200px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                     <Input
                         placeholder="Search reviews..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        className="pl-9 bg-slate-800/50 border-slate-700 text-white"
+                        className="pl-9 bg-slate-900/50 border-slate-800"
                     />
                 </div>
 

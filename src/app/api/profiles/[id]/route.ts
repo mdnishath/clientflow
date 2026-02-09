@@ -98,7 +98,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         }
 
         if (permanent) {
-            // Permanent delete
+            // Permanent delete - Must delete related reviews first due to Foreign Key constraints
+            await prisma.review.deleteMany({ where: { profileId: id } });
+
             await prisma.gmbProfile.delete({ where: { id } });
 
             await createNotification({

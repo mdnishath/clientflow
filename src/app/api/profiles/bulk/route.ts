@@ -112,6 +112,18 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: "No IDs provided" }, { status: 400 });
         }
 
+        // 1. Delete all reviews associated with these profiles
+        await prisma.review.deleteMany({
+            where: {
+                profileId: { in: ids },
+                // Security check implicit by profile ownership, but good to be careful
+                // We rely on the profile delete check below to enforce ownership strictness
+                // properly, but for reviews we just want to clear them.
+                profile: scope.isAdmin ? {} : { clientId: scope.clientId! }
+            }
+        });
+
+        // 2. Delete the profiles
         const result = await prisma.gmbProfile.deleteMany({
             where: {
                 id: { in: ids },

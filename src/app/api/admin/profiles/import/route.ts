@@ -135,3 +135,12 @@ export async function POST(request: NextRequest) {
         );
     }
 }
+
+// Increase body size limit for bulk import
+export const config = {
+    api: {
+        bodyParser: {
+            sizeLimit: '10mb',
+        },
+    },
+};

@@ -10,12 +10,7 @@ import {
     Store,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AutoFillButton } from "@/components/dashboard/auto-fill-button";
-import { DeletePendingButton } from "@/components/dashboard/delete-pending-button";
-import { UpdateLimitButton } from "@/components/dashboard/update-limit-button";
-import { UpdateStartDateButton } from "@/components/dashboard/update-start-date-button";
-import { RescheduleButton } from "@/components/dashboard/reschedule-button";
-import { CleanupButton } from "@/components/dashboard/cleanup-button";
+import { DashboardHeaderActions } from "@/components/dashboard/header-actions";
 import Link from "next/link";
 
 interface ReviewWithProfile {
@@ -28,7 +23,6 @@ interface ReviewWithProfile {
     };
 }
 
-// Get dashboard data based on user role and scope
 // Get dashboard data based on user role and scope
 async function getDashboardData(userId: string, role: string, clientId: string | null, parentAdminId?: string | null) {
     const isAdmin = role === "ADMIN";
@@ -214,25 +208,18 @@ export default async function DashboardPage() {
         : 100;
 
     return (
-        <div className="p-6 lg:p-8 pt-16 lg:pt-8">
+        <div className="p-4 lg:p-8 pt-4 lg:pt-8 h-full overflow-y-auto">
             {/* Header */}
-            <div className="mb-8 flex items-end justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-                    <p className="text-slate-400 mt-1">
-                        Welcome back, {session.user.name || "there"}
-                    </p>
-                </div>
-                {data.isAdmin && (
-                    <div className="flex gap-3">
-                        <UpdateStartDateButton />
-                        <RescheduleButton />
-                        <UpdateLimitButton />
-                        <DeletePendingButton />
-                        <AutoFillButton />
-                        <CleanupButton />
-                    </div>
-                )}
+            {/* Header Actions */}
+            <div className="mt-4 lg:mt-8 flex flex-col items-start gap-4 mb-8">
+                <h1 className="text-2xl lg:text-3xl font-bold text-white mb-2">
+                    Dashboard
+                    <span className="block text-lg font-normal text-slate-400 mt-1">
+                        Welcome back, {session?.user?.name || "User"}
+                    </span>
+                </h1>
+
+                <DashboardHeaderActions />
             </div>
 
             {/* Stats Grid */}

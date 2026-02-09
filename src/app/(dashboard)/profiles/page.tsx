@@ -42,6 +42,16 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { ProfileCard } from "@/components/profiles/profile-card";
 import { useAuth } from "@/hooks/useAuth";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Profile {
     id: string;
@@ -95,30 +105,116 @@ export default function ProfilesPage() {
         }
     };
 
-    const handleBulkAction = async (action: "archive" | "delete" | "restore") => {
-        if (!confirm(`Are you sure you want to ${action} ${selectedIds.size} profiles?`)) return;
+    // Bulk Actions
+    const [bulkActionLoading, setBulkActionLoading] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+    const [deletingProfile, setDeletingProfile] = useState<Profile | null>(null);
+
+    const handleBulkArchive = async () => {
+        if (selectedIds.size === 0) return;
 
         try {
+            setBulkActionLoading(true);
             const res = await fetch("/api/profiles/bulk", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     ids: Array.from(selectedIds),
-                    action,
+                    action: "archive",
                 }),
             });
 
             if (res.ok) {
-                toast.success(`Profiles ${action}d successfully`);
+                toast.success(`Archived ${selectedIds.size} profiles`);
                 setSelectedIds(new Set());
                 fetchProfiles();
             } else {
-                toast.error("Failed to perform action");
+                toast.error("Failed to archive profiles");
             }
         } catch {
-            toast.error("Error performing action");
+            toast.error("Error archiving profiles");
+        } finally {
+            setBulkActionLoading(false);
         }
     };
+
+    const handleBulkRestore = async () => {
+        if (selectedIds.size === 0) return;
+
+        try {
+            setBulkActionLoading(true);
+            const res = await fetch("/api/profiles/bulk", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    ids: Array.from(selectedIds),
+                    action: "restore",
+                }),
+            });
+
+            if (res.ok) {
+                toast.success(`Restored ${selectedIds.size} profiles`);
+                setSelectedIds(new Set());
+                fetchProfiles();
+            } else {
+                toast.error("Failed to restore profiles");
+            }
+        } catch {
+            toast.error("Error restoring profiles");
+        } finally {
+            setBulkActionLoading(false);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+
+        try {
+            setBulkActionLoading(true);
+            const res = await fetch("/api/profiles/bulk", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    ids: Array.from(selectedIds),
+                }),
+            });
+
+            if (res.ok) {
+                toast.success(`Permanently deleted ${selectedIds.size} profiles`);
+                setSelectedIds(new Set());
+                setBulkDeleteDialogOpen(false);
+                fetchProfiles();
+            } else {
+                const data = await res.json();
+                toast.error(data.error || "Failed to delete profiles");
+            }
+        } catch {
+            toast.error("Error deleting profiles");
+        } finally {
+            setBulkActionLoading(false);
+        }
+    };
+
+    const handleDeleteProfile = async () => {
+        if (!deletingProfile) return;
+        try {
+            const res = await fetch(`/api/profiles/${deletingProfile.id}?permanent=true`, {
+                method: "DELETE",
+            });
+            if (res.ok) {
+                toast.success("Profile deleted permanently");
+                setDeleteDialogOpen(false);
+                setDeletingProfile(null);
+                fetchProfiles();
+            } else {
+                toast.error("Failed to delete profile");
+            }
+        } catch {
+            toast.error("Error deleting profile");
+        }
+    };
+
     const [categories, setCategories] = useState<Category[]>([]);
     const [clients, setClients] = useState<Client[]>([]);
     const [loading, setLoading] = useState(true);
@@ -287,27 +383,10 @@ export default function ProfilesPage() {
         }
     };
 
-    const handleDeleteProfile = async (profile: Profile) => {
-        if (!confirm(`Are you sure you want to PERMANENTLY delete "${profile.businessName}"? This cannot be undone.`)) return;
-        try {
-            const res = await fetch(`/api/profiles/${profile.id}?permanent=true`, {
-                method: "DELETE",
-            });
-            if (res.ok) {
-                toast.success("Profile deleted permanently");
-                fetchProfiles();
-            } else {
-                toast.error("Failed to delete profile");
-            }
-        } catch {
-            toast.error("Error deleting profile");
-        }
-    };
-
     return (
         <div className="p-6 space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-white flex items-center gap-3">
                         <Store className="text-indigo-400" />
@@ -317,70 +396,84 @@ export default function ProfilesPage() {
                         Manage your Google My Business profiles
                     </p>
                 </div>
-            </div>
-            <div className="flex items-center gap-2">
-                {isAdmin && (
-                    <Link href="/profiles/import">
+                <div className="flex flex-wrap items-center gap-2">
+                    {isAdmin && (
+                        <Link href="/profiles/import">
+                            <Button
+                                variant="outline"
+                                className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10"
+                            >
+                                <Upload className="mr-2 h-4 w-4" />
+                                Import
+                            </Button>
+                        </Link>
+                    )}
+                    {isAdmin && (
                         <Button
-                            variant="outline"
-                            className="border-indigo-600 text-indigo-400 hover:bg-indigo-600/10"
+                            variant={isSelectionMode ? "secondary" : "outline"}
+                            onClick={() => {
+                                setIsSelectionMode(!isSelectionMode);
+                                setSelectedIds(new Set());
+                            }}
+                            className="border-slate-600 text-slate-300"
                         >
-                            <Upload className="mr-2 h-4 w-4" />
-                            Import
+                            {isSelectionMode ? "Cancel Selection" : "Select Profiles"}
                         </Button>
-                    </Link>
-                )}
-                {isAdmin && (
-                    <Button
-                        variant={isSelectionMode ? "secondary" : "outline"}
-                        onClick={() => {
-                            setIsSelectionMode(!isSelectionMode);
-                            setSelectedIds(new Set());
-                        }}
-                        className="border-slate-600 text-slate-300"
-                    >
-                        {isSelectionMode ? "Cancel Selection" : "Select Profiles"}
-                    </Button>
-                )}
-                {can.addProfiles && (
-                    <Button
-                        onClick={() => setIsDialogOpen(true)}
-                        className="bg-indigo-600 hover:bg-indigo-700"
-                    >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Profile
-                    </Button>
-                )}
+                    )}
+                    {can.addProfiles && (
+                        <Button
+                            onClick={() => setIsDialogOpen(true)}
+                            className="bg-indigo-600 hover:bg-indigo-700"
+                        >
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add Profile
+                        </Button>
+                    )}
+                </div>
             </div>
 
 
             {/* Bulk Action Bar - Sticky if selection active */}
             {
                 isSelectionMode && selectedIds.size > 0 && isAdmin && (
-                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 p-4 rounded-lg shadow-xl z-50 flex items-center gap-4 animate-in slide-in-from-bottom-5 fade-in">
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 p-4 rounded-lg shadow-xl z-50 flex flex-wrap items-center justify-center gap-4 w-[95vw] max-w-4xl animate-in slide-in-from-bottom-5 fade-in">
                         <span className="text-white font-medium">
                             {selectedIds.size} selected
                         </span>
-                        <div className="h-6 w-px bg-slate-700" />
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleBulkAction("archive")}
-                            className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10"
-                        >
-                            <Archive className="mr-2 h-4 w-4" />
-                            Archive
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleBulkAction("delete")}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
-                        >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                        </Button>
-                        <div className="h-6 w-px bg-slate-700" />
+                        <div className="hidden sm:block h-6 w-px bg-slate-700" />
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={bulkActionLoading}
+                                onClick={handleBulkArchive}
+                                className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-400/10"
+                            >
+                                {bulkActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Archive className="mr-2 h-4 w-4" />}
+                                Archive
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={bulkActionLoading}
+                                onClick={handleBulkRestore}
+                                className="text-green-400 hover:text-green-300 hover:bg-green-400/10"
+                            >
+                                {bulkActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArchiveRestore className="mr-2 h-4 w-4" />}
+                                Restore
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={bulkActionLoading}
+                                onClick={() => setBulkDeleteDialogOpen(true)}
+                                className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                            >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                            </Button>
+                        </div>
+                        <div className="hidden sm:block h-6 w-px bg-slate-700" />
                         <Button
                             variant="ghost"
                             size="sm"
@@ -507,7 +600,10 @@ export default function ProfilesPage() {
                                     showClientName={true}
                                     onArchive={can.deleteProfiles ? handleArchiveProfile : undefined}
                                     onRestore={can.deleteProfiles ? handleRestoreProfile : undefined}
-                                    onDelete={can.deleteProfiles ? handleDeleteProfile : undefined}
+                                    onDelete={can.deleteProfiles ? (p) => {
+                                        setDeletingProfile(p);
+                                        setDeleteDialogOpen(true);
+                                    } : undefined}
                                     isAdmin={isAdmin}
                                 />
                             ))}
@@ -729,6 +825,58 @@ export default function ProfilesPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Delete Confirmation */}
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogContent className="bg-slate-800 border-slate-700 text-white">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-white">
+                            Delete Profile Permanently?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-slate-400">
+                            This will permanently delete &quot;{deletingProfile?.businessName}&quot; and all associated reviews. This cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="border-slate-600 text-slate-300 hover:bg-slate-700 bg-transparent">
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleDeleteProfile}
+                            className="bg-destructive hover:bg-destructive/90"
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Bulk Delete Confirmation */}
+            <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+                <AlertDialogContent className="bg-slate-800 border-slate-700 text-white">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-white">
+                            Delete {selectedIds.size} Profiles Permanently?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="text-slate-400">
+                            This will permanently delete the selected profiles and all their reviews. This cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel className="border-slate-600 text-slate-300 hover:bg-slate-700 bg-transparent">
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleBulkDelete}
+                            className="bg-destructive hover:bg-destructive/90"
+                            disabled={bulkActionLoading}
+                        >
+                            {bulkActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Delete {selectedIds.size} Profiles
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div >
     );
 }

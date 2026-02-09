@@ -440,7 +440,7 @@ export default function CheckerPage() {
                         Check if your reviews are live on Google Maps
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
                     <ExportButton />
                     {selectedIds.length > 0 && (
                         <Button
@@ -473,106 +473,117 @@ export default function CheckerPage() {
             </div>
 
             {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-4">
-                <div className="relative flex-1">
+            <div className="grid grid-cols-2 md:flex md:flex-wrap items-center gap-3 mb-4">
+                <div className="relative col-span-2 md:flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                     <Input
                         placeholder="Search reviews..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        className="pl-9 bg-slate-800/50 border-slate-700 text-white"
+                        className="pl-9 bg-slate-800/50 border-slate-700 text-white w-full"
                     />
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-[150px] bg-slate-800/50 border-slate-700 text-white">
-                        <Filter size={14} className="mr-2" />
-                        <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-700">
-                        <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="MISSING">Missing</SelectItem>
-                        <SelectItem value="APPLIED">Applied</SelectItem>
-                        <SelectItem value="GOOGLE_ISSUE">Google Issue</SelectItem>
-                        <SelectItem value="LIVE">Live</SelectItem>
-                        <SelectItem value="DONE">Done</SelectItem>
-                    </SelectContent>
-                </Select>
+
+                <div className="col-span-1 md:w-auto">
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger className="w-full md:w-[150px] bg-slate-800/50 border-slate-700 text-white">
+                            <Filter size={14} className="mr-2" />
+                            <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                            <SelectItem value="all">All Status</SelectItem>
+                            <SelectItem value="MISSING">Missing</SelectItem>
+                            <SelectItem value="APPLIED">Applied</SelectItem>
+                            <SelectItem value="GOOGLE_ISSUE">Google Issue</SelectItem>
+                            <SelectItem value="LIVE">Live</SelectItem>
+                            <SelectItem value="DONE">Done</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
 
                 {/* Profile Filter */}
-                <Select value={profileFilter} onValueChange={setProfileFilter}>
-                    <SelectTrigger className="w-[180px] bg-slate-800/50 border-slate-700 text-white">
-                        <Store size={14} className="mr-2" />
-                        <SelectValue placeholder="Profile" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-700 max-h-[300px]">
-                        <SelectItem value="all">All Profiles</SelectItem>
-                        {profiles.map((profile) => (
-                            <SelectItem key={profile.id} value={profile.id}>
-                                {profile.businessName}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                <div className="col-span-1 md:w-auto">
+                    <Select value={profileFilter} onValueChange={setProfileFilter}>
+                        <SelectTrigger className="w-full md:w-[180px] bg-slate-800/50 border-slate-700 text-white">
+                            <Store size={14} className="mr-2" />
+                            <SelectValue placeholder="Profile" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700 max-h-[300px]">
+                            <SelectItem value="all">All Profiles</SelectItem>
+                            {profiles.map((profile) => (
+                                <SelectItem key={profile.id} value={profile.id}>
+                                    {profile.businessName}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
 
-                <Select value={checkStatusFilter} onValueChange={setCheckStatusFilter}>
-                    <SelectTrigger className="w-[150px] bg-slate-800/50 border-slate-700 text-white">
-                        <CheckCircle2 size={14} className="mr-2" />
-                        <SelectValue placeholder="Badge" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-700">
-                        <SelectItem value="all">All Badges</SelectItem>
-                        <SelectItem value="LIVE">
-                            <span className="flex items-center text-green-400">
-                                <CheckCircle2 size={12} className="mr-2" /> Live
-                            </span>
-                        </SelectItem>
-                        <SelectItem value="MISSING">
-                            <span className="flex items-center text-yellow-500">
-                                <AlertCircle size={12} className="mr-2" /> Missing
-                            </span>
-                        </SelectItem>
-                        <SelectItem value="ERROR">
-                            <span className="flex items-center text-red-400">
-                                <AlertCircle size={12} className="mr-2" /> Error
-                            </span>
-                        </SelectItem>
-                        <SelectItem value="CHECKING">
-                            <span className="flex items-center text-blue-400">
-                                <Activity size={12} className="mr-2" /> Checking
-                            </span>
-                        </SelectItem>
-                    </SelectContent>
-                </Select>
+                <div className="col-span-1 md:w-auto">
+                    <Select value={checkStatusFilter} onValueChange={setCheckStatusFilter}>
+                        <SelectTrigger className="w-full md:w-[150px] bg-slate-800/50 border-slate-700 text-white">
+                            <CheckCircle2 size={14} className="mr-2" />
+                            <SelectValue placeholder="Badge" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                            <SelectItem value="all">All Badges</SelectItem>
+                            <SelectItem value="LIVE">
+                                <span className="flex items-center text-green-400">
+                                    <CheckCircle2 size={12} className="mr-2" /> Live
+                                </span>
+                            </SelectItem>
+                            <SelectItem value="MISSING">
+                                <span className="flex items-center text-yellow-500">
+                                    <AlertCircle size={12} className="mr-2" /> Missing
+                                </span>
+                            </SelectItem>
+                            <SelectItem value="ERROR">
+                                <span className="flex items-center text-red-400">
+                                    <AlertCircle size={12} className="mr-2" /> Error
+                                </span>
+                            </SelectItem>
+                            <SelectItem value="CHECKING">
+                                <span className="flex items-center text-blue-400">
+                                    <Activity size={12} className="mr-2" /> Checking
+                                </span>
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
 
                 {/* Thread Count Dropdown */}
-                <Select
-                    value={threadCount.toString()}
-                    onValueChange={(val) => setThreadCount(parseInt(val))}
-                >
-                    <SelectTrigger className="w-[130px] bg-slate-800/50 border-slate-700 text-white">
-                        <Activity size={14} className="mr-2" />
-                        <SelectValue placeholder="Threads" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-700">
-                        <SelectItem value="3">3 Threads</SelectItem>
-                        <SelectItem value="5">5 Threads</SelectItem>
-                        <SelectItem value="10">10 Threads</SelectItem>
-                    </SelectContent>
-                </Select>
+                <div className="col-span-1 md:w-auto">
+                    <Select
+                        value={threadCount.toString()}
+                        onValueChange={(val) => setThreadCount(parseInt(val))}
+                    >
+                        <SelectTrigger className="w-full md:w-[130px] bg-slate-800/50 border-slate-700 text-white">
+                            <Activity size={14} className="mr-2" />
+                            <SelectValue placeholder="Threads" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                            <SelectItem value="3">3 Threads</SelectItem>
+                            <SelectItem value="5">5 Threads</SelectItem>
+                            <SelectItem value="10">10 Threads</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+
                 <Button
                     variant={loadMode === "all" ? "default" : "outline"}
                     onClick={() => {
                         setLoadMode(loadMode === "paginated" ? "all" : "paginated");
                         setPage(1);
                     }}
-                    className={loadMode === "all" ? "bg-indigo-600 hover:bg-indigo-700" : "border-slate-700 text-slate-300"}
+                    className={`col-span-1 md:w-auto ${loadMode === "all" ? "bg-indigo-600 hover:bg-indigo-700" : "border-slate-700 text-slate-300"}`}
                 >
                     {loadMode === "all" ? "Showing All" : "Load All"}
                 </Button>
+
                 <Button
                     variant={showArchived ? "default" : "outline"}
                     onClick={() => setShowArchived(!showArchived)}
-                    className={showArchived ? "bg-amber-600 hover:bg-amber-700" : "border-slate-700 text-slate-300"}
+                    className={`col-span-1 md:w-auto ${showArchived ? "bg-amber-600 hover:bg-amber-700" : "border-slate-700 text-slate-300"}`}
                 >
                     <Archive size={16} className="mr-2" />
                     {showArchived ? "Archived" : "Show Archived"}

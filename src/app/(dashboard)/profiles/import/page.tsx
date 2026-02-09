@@ -59,7 +59,8 @@ export default function ImportPage() {
 
         try {
             const data = await selectedFile.arrayBuffer();
-            const workbook = read(data);
+            // Force UTF-8 (codepage 65001) to handle accents correctly
+            const workbook = read(data, { codepage: 65001 });
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
             const jsonData = utils.sheet_to_json<any>(worksheet, { header: 1 });
 
