@@ -158,6 +158,7 @@ export default function ReviewsPage() {
     const [clientFilter, setClientFilter] = useState("all");
     const [categoryFilter, setCategoryFilter] = useState("all");
     const [profileFilter, setProfileFilter] = useState("all");
+    const [dueDateFilter, setDueDateFilter] = useState("today"); // "all" | "today"
     const [search, setSearch] = useState("");
     const [showArchived, setShowArchived] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -254,6 +255,7 @@ export default function ReviewsPage() {
                 };
             };
             isArchived?: boolean;
+            dueDate?: string;
         } = { page, limit: 20 };
 
         if (clientFilter !== "all") params.clientId = clientFilter;
@@ -263,14 +265,19 @@ export default function ReviewsPage() {
         if (search) params.search = search;
         if (showArchived) params.isArchived = true;
 
+        // Add due date filter
+        if (dueDateFilter === "today") {
+            params.dueDate = new Date().toISOString().split('T')[0]; // simple YYYY-MM-DD for today
+        }
+
         await dispatch(fetchReviews(params));
-    }, [dispatch, page, clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived]);
+    }, [dispatch, page, clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived, dueDateFilter]);
 
     // Reset page when filters change
     useEffect(() => {
         setPage(1);
         setSelectedIds([]);
-    }, [clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived]);
+    }, [clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived, dueDateFilter]);
 
     useEffect(() => {
         fetchReviewsData();
@@ -641,6 +648,17 @@ export default function ReviewsPage() {
                         </SelectContent>
                     </Select>
                 )}
+
+                <div className="flex items-center space-x-2">
+                    <Button
+                        variant={dueDateFilter === "today" ? "default" : "outline"}
+                        onClick={() => setDueDateFilter(prev => prev === "today" ? "all" : "today")}
+                        className={`h-10 ${dueDateFilter === "today" ? "bg-indigo-600 hover:bg-indigo-700" : "bg-slate-800 border-slate-700 text-slate-300 hover:text-white"}`}
+                    >
+                        <Calendar size={14} className="mr-2" />
+                        Due Today
+                    </Button>
+                </div>
 
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-[150px] bg-slate-800/50 border-slate-700 text-white">

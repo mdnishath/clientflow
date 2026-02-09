@@ -82,6 +82,21 @@ export async function GET(request: NextRequest) {
         });
     }
 
+    // 8. Due Date Filter
+    const dueDate = searchParams.get("dueDate");
+    if (dueDate) {
+        // Assume dueDate passed is YYYY-MM-DD (e.g. today)
+        // We want to include Overdue + Today, so lte: End of that Day
+        const dateObj = new Date(dueDate);
+        dateObj.setHours(23, 59, 59, 999);
+
+        andConditions.push({
+            dueDate: {
+                lte: dateObj
+            }
+        });
+    }
+
     const where: any = { AND: andConditions };
 
     // 4. Fetch ALL matching reviews (without pagination args) to process scheduling correctly

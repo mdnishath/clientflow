@@ -14,6 +14,7 @@ import { AutoFillButton } from "@/components/dashboard/auto-fill-button";
 import { DeletePendingButton } from "@/components/dashboard/delete-pending-button";
 import { UpdateLimitButton } from "@/components/dashboard/update-limit-button";
 import { UpdateStartDateButton } from "@/components/dashboard/update-start-date-button";
+import { RescheduleButton } from "@/components/dashboard/reschedule-button";
 import Link from "next/link";
 
 interface ReviewWithProfile {
@@ -109,119 +110,64 @@ async function getDashboardData(userId: string, role: string, clientId: string |
 
 
     // ============================================================================
-    // SCHEDULING-BASED PROGRESS (NOT dueDate-based)
+    // DATE-BASED PROGRESS (Uses real DB dueDates)
     // ============================================================================
-    // Match the logic from /api/me/stats to ensure consistency
 
-    // Get server's start of today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Get server's start/end of today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
 
-    // 1. Fetch ALL reviews (no dueDate filter)
-    const allReviews = await prisma.review.findMany({
-        where: reviewWhere as any,
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    // 1. Get "Done Today" (Completed today)
+    // We count anything completed today, regardless of when it was due.
+    const doneTodayCount = await prisma.review.count({
+        where: {
+            ...reviewWhere,
+            status: { in: ["DONE", "LIVE"] },
+            completedAt: { gte: todayStart, lte: todayEnd },
+        }
+    });
+
+    // 2. Get "Due Today or Overdue" (Pending/Issues that are due <= today)
+    // This strictly respects the dueDate set by the Reschedule tool.
+    // It excludes future dates (tomorrow, 11th, etc).
+    const duePendingReviews = await prisma.review.findMany({
+        where: {
+            ...reviewWhere, // Scoped to user/admin
+            status: { notIn: ["DONE", "LIVE"] }, // Only actionable items
+            isArchived: false,
+            dueDate: { lte: todayEnd } // <= Today (includes Overdue + Today)
+        },
         include: {
             profile: {
                 select: {
-                    id: true,
-                    reviewLimit: true,
-                    reviewsStartDate: true,
-                    businessName: true, // Added for todayReviews list
-                    client: { select: { name: true } } // Added for todayReviews list
-                },
-            },
-        },
-        orderBy: { createdAt: "asc" },
-    });
-
-    // 2. Get "Done Today" counts per profile
-    const profileIds = [...new Set(allReviews.map(r => r.profileId))];
-    const doneCounts = await prisma.review.groupBy({
-        by: ["profileId"],
-        where: {
-            profileId: { in: profileIds },
-            status: { in: ["DONE", "LIVE"] },
-            completedAt: { gte: today },
-            isArchived: false,
-        },
-        _count: { id: true },
-    });
-
-    const doneTodayMap: Record<string, number> = {};
-    doneCounts.forEach(c => {
-        doneTodayMap[c.profileId] = c._count.id;
-    });
-
-    // 3. Apply scheduling logic
-    const reviewsByProfile: Record<string, typeof allReviews> = {};
-    for (const r of allReviews) {
-        if (!reviewsByProfile[r.profileId]) {
-            reviewsByProfile[r.profileId] = [];
-        }
-        reviewsByProfile[r.profileId].push(r);
-    }
-
-    let todayTotal = 0;
-    let todayLive = 0;
-    let todayPending = 0;
-    let todayIssues = 0;
-    const todayReviews: ReviewWithProfile[] = [];
-
-    for (const profileId in reviewsByProfile) {
-        const profileReviews = reviewsByProfile[profileId];
-
-        // Sort by creation
-        profileReviews.sort((a, b) => {
-            const timeA = new Date(a.createdAt).getTime();
-            const timeB = new Date(b.createdAt).getTime();
-            return timeA === timeB ? (a.id < b.id ? -1 : 1) : timeA - timeB;
-        });
-
-        const { reviewLimit, reviewsStartDate } = profileReviews[0].profile;
-
-        if (reviewLimit && reviewsStartDate) {
-            const doneTodayCount = doneTodayMap[profileId] || 0;
-            const remainingQuota = Math.max(0, reviewLimit - doneTodayCount);
-
-            let quotaUsed = 0;
-
-            for (const review of profileReviews) {
-                const isPendingType = review.status !== "DONE" && review.status !== "LIVE" && !review.isArchived;
-
-                if (isPendingType) {
-                    if (quotaUsed < remainingQuota) {
-                        // This review is DUE TODAY (within quota)
-                        todayTotal++;
-                        if (review.status === "PENDING") {
-                            todayPending++;
-                            if (todayReviews.length < 5) {
-                                todayReviews.push({
-                                    id: review.id,
-                                    status: review.status,
-                                    dueDate: review.dueDate,
-                                    profile: {
-                                        businessName: (review.profile as any).businessName || "Unknown",
-                                        client: { name: (review.profile as any).client?.name || "Unknown" }
-                                    }
-                                });
-                            }
-                        }
-                        if (review.status === "MISSING" || review.status === "GOOGLE_ISSUE") {
-                            todayIssues++;
-                        }
-                        quotaUsed++;
-                    }
-                    // else: scheduled for future, don't count
-                } else if (review.status === "LIVE" || review.status === "DONE") {
-                    // Count completed reviews (they were part of initial pending + now live)
-                    if (review.completedAt && new Date(review.completedAt) >= today) {
-                        todayLive++;
-                        todayTotal++;
-                    }
+                    businessName: true,
+                    client: { select: { name: true } }
                 }
             }
+        },
+        orderBy: { dueDate: "asc" },
+        // take: 50 // Optional limit? No, we need counts.
+    });
+
+    const pendingCount = duePendingReviews.filter(r => r.status === "PENDING").length;
+    const issueCount = duePendingReviews.filter(r => ["MISSING", "GOOGLE_ISSUE"].includes(r.status)).length;
+
+    // Total Goal = Done Today + Remaining Due <= Today
+    const todayTotal = doneTodayCount + duePendingReviews.length;
+
+    // Prepare list for "Today's Task" view (limit to 5 for UI)
+    const todayReviews: ReviewWithProfile[] = duePendingReviews.slice(0, 5).map(r => ({
+        id: r.id,
+        status: r.status,
+        dueDate: r.dueDate,
+        profile: {
+            businessName: r.profile.businessName || "Unknown",
+            client: { name: r.profile.client?.name || "Unknown" }
         }
-    }
+    }));
 
     return {
         totalClients,
@@ -237,9 +183,9 @@ async function getDashboardData(userId: string, role: string, clientId: string |
         isAdmin,
         todayStats: {
             total: todayTotal,
-            live: todayLive,
-            pending: todayPending,
-            issues: todayIssues
+            live: doneTodayCount,
+            pending: pendingCount,
+            issues: issueCount
         }
     };
 }
@@ -279,6 +225,7 @@ export default async function DashboardPage() {
                 {data.isAdmin && (
                     <div className="flex gap-3">
                         <UpdateStartDateButton />
+                        <RescheduleButton />
                         <UpdateLimitButton />
                         <DeletePendingButton />
                         <AutoFillButton />

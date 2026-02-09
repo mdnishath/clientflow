@@ -68,6 +68,7 @@ interface FetchReviewsParams {
     limit?: number;
     isArchived?: boolean;
     checkStatus?: string;
+    dueDate?: string;
 }
 
 export const fetchReviews = createAsyncThunk(
@@ -81,6 +82,7 @@ export const fetchReviews = createAsyncThunk(
         if (params.checkStatus && params.checkStatus !== "all") query.set("checkStatus", params.checkStatus);
         if (params.search) query.set("search", params.search);
         if (params.isArchived) query.set("archived", "true");
+        if (params.dueDate) query.set("dueDate", params.dueDate);
         query.set("page", (params.page || 1).toString());
         query.set("limit", (params.limit || 20).toString());
 
