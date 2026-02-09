@@ -54,6 +54,8 @@ import {
     optimisticArchiveReview,
     type Review,
 } from "@/lib/features/reviewsSlice";
+import { useReviewLocks } from "@/hooks/use-review-locks";
+import { Lock } from "lucide-react";
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
     PENDING: { label: "Pending", color: "bg-slate-500", icon: <Clock size={12} /> },
@@ -74,44 +76,73 @@ const copyToClipboard = async (text: string, label: string) => {
     }
 };
 
-function ReviewActionButtons({
-    gmbLink,
-    reviewLiveLink,
-    reviewText,
-    status,
-}: {
+interface ReviewActionButtonsProps {
+    reviewId: string;
     gmbLink: string | null;
     reviewLiveLink: string | null;
     reviewText: string | null;
     status: string;
-}) {
+    isLocked: boolean;
+    lockedBy?: string | null;
+    onAction: () => void;
+}
+
+function ReviewActionButtons({
+    reviewId,
+    gmbLink,
+    reviewLiveLink,
+    reviewText,
+    status,
+    isLocked,
+    lockedBy,
+    onAction
+}: ReviewActionButtonsProps) {
     const showReviewActions = (status === "LIVE" || status === "DONE" || status === "APPLIED") && reviewLiveLink;
+
+    const handleAction = (cb: () => void) => {
+        if (isLocked) {
+            toast.error(`Locked by ${lockedBy}`);
+            return;
+        }
+        onAction(); // Acquire lock
+        cb();
+    };
 
     return (
         <div className="flex items-center gap-1">
             {reviewText && (
-                <CopyButton
-                    text={reviewText}
-                    className="h-8 w-8 p-0 text-slate-400 hover:text-white hover:bg-slate-700"
-                    variant="ghost"
-                    size="sm"
-                />
+                <div onClick={(e) => {
+                    if (isLocked) {
+                        e.stopPropagation();
+                        toast.error(`Locked by ${lockedBy}`);
+                    } else {
+                        onAction(); // Acquire lock on interaction
+                    }
+                }}>
+                    <CopyButton
+                        text={reviewText}
+                        className={`h-8 w-8 p-0 ${isLocked ? "text-slate-600 cursor-not-allowed pointer-events-none" : "text-slate-400 hover:text-white hover:bg-slate-700"}`}
+                        variant="ghost"
+                        size="sm"
+                    />
+                </div>
             )}
             {gmbLink && (
                 <>
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => copyToClipboard(gmbLink, "GMB Link")}
-                        className="h-8 w-8 p-0 text-slate-400 hover:text-white hover:bg-slate-700"
-                        title="Copy GMB Link"
+                        onClick={() => handleAction(() => copyToClipboard(gmbLink, "GMB Link"))}
+                        className={`h-8 w-8 p-0 ${isLocked ? "text-slate-600 cursor-not-allowed" : "text-slate-400 hover:text-white hover:bg-slate-700"}`}
+                        title={isLocked ? `Locked by ${lockedBy}` : "Copy GMB Link"}
+                        disabled={isLocked}
                     >
                         <Store size={14} />
                     </Button>
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => window.open(gmbLink, "_blank")}
+                        onClick={() => handleAction(() => window.open(gmbLink, "_blank"))}
                         className="h-8 w-8 p-0 text-slate-400 hover:text-white hover:bg-slate-700"
                         title="Visit GMB Profile"
                     >
@@ -125,7 +156,7 @@ function ReviewActionButtons({
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => copyToClipboard(reviewLiveLink!, "Review Link")}
+                        onClick={() => handleAction(() => copyToClipboard(reviewLiveLink!, "Review Link"))}
                         className="h-8 w-8 p-0 text-green-400 hover:text-green-300 hover:bg-green-500/10"
                         title="Copy Review Link"
                     >
@@ -134,7 +165,7 @@ function ReviewActionButtons({
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => window.open(reviewLiveLink!, "_blank")}
+                        onClick={() => handleAction(() => window.open(reviewLiveLink!, "_blank"))}
                         className="h-8 w-8 p-0 text-green-400 hover:text-green-300 hover:bg-green-500/10"
                         title="Visit Live Review"
                     >
@@ -150,7 +181,8 @@ function ReviewActionButtons({
 export default function ReviewsPage() {
     const { can } = useAuth();
     const dispatch = useAppDispatch();
-    const { items: reviews, meta, loading } = useAppSelector((state) => state.reviews);
+    const { items: allReviews, meta, loading } = useAppSelector((state) => state.reviews);
+
     const { data: session } = useSession();
 
     const [page, setPage] = useState(1);
@@ -174,6 +206,9 @@ export default function ReviewsPage() {
     const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
     const [editingReview, setEditingReview] = useState<Review | null>(null);
 
+    // Lock Management
+    const { isLocked, getLock, acquireLock, releaseLock, currentUser } = useReviewLocks();
+
     // Worker stats for progress bar
     const [myStats, setMyStats] = useState<{
         today: { updated: number; live: number };
@@ -181,6 +216,13 @@ export default function ReviewsPage() {
         totalCreated: number;
         totalUpdated: number;
     } | null>(null);
+
+    // Client-side filtering to ensure real-time updates respect the current view
+    // MOVED here to avoid ReferenceError (must be after state init)
+    const reviews = allReviews.filter(r => {
+        if (statusFilter === "all") return true;
+        return r.status === statusFilter;
+    });
 
     const isLoading = loading === "pending";
 
@@ -798,7 +840,9 @@ export default function ReviewsPage() {
                         return (
                             <Card
                                 key={review.id}
-                                className={`border-slate-700 hover:bg-slate-800/70 transition-colors ${isSelected ? "ring-2 ring-indigo-500 bg-indigo-600/10" : "bg-slate-800/50"
+                                className={`transition-colors ${isLocked(review.id)
+                                    ? "border-amber-500/30 bg-amber-500/5 opacity-75"
+                                    : `border-slate-700 hover:bg-slate-800/70 ${isSelected ? "ring-2 ring-indigo-500 bg-indigo-600/10" : "bg-slate-800/50"}`
                                     }`}
                             >
                                 <CardContent className="p-4">
@@ -830,10 +874,10 @@ export default function ReviewsPage() {
                                                             </span>
                                                         </div>
                                                     )}
-                                                    {/* Attribution - show createdBy/updatedBy based on status */}
-                                                    {review.status === "LIVE" && review.updatedBy?.name ? (
+                                                    {/* Attribution - show liveBy for LIVE, updatedBy for others */}
+                                                    {review.status === "LIVE" && (review.liveBy?.name || review.updatedBy?.name) ? (
                                                         <span className="text-green-400 text-xs">
-                                                            Live by {review.updatedBy.name}
+                                                            Live by {review.liveBy?.name || review.updatedBy?.name}
                                                         </span>
                                                     ) : review.status === "APPLIED" && review.updatedBy?.name ? (
                                                         <span className="text-purple-400 text-xs">
@@ -918,6 +962,15 @@ export default function ReviewsPage() {
                                                             Note: {review.notes}
                                                         </span>
                                                     )}
+                                                    {/* Lock Indicator */}
+                                                    {getLock(review.id) && (
+                                                        <Badge variant="outline" className="text-amber-500 border-amber-500/50 bg-amber-500/10 gap-1 pl-1 pr-2">
+                                                            <Lock size={10} />
+                                                            {getLock(review.id)?.userId === currentUser?.id
+                                                                ? "Editing by You"
+                                                                : `Locked by ${getLock(review.id)?.username}`}
+                                                        </Badge>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -925,10 +978,14 @@ export default function ReviewsPage() {
                                         {/* Actions */}
                                         <div className="flex items-center gap-2">
                                             <ReviewActionButtons
+                                                reviewId={review.id}
                                                 gmbLink={review.profile.gmbLink}
                                                 reviewLiveLink={review.reviewLiveLink}
                                                 reviewText={review.reviewText}
                                                 status={review.status}
+                                                isLocked={isLocked(review.id)}
+                                                lockedBy={getLock(review.id)?.username}
+                                                onAction={() => acquireLock(review.id)}
                                             />
 
                                             {/* Edit Button - Gated */}
@@ -936,9 +993,17 @@ export default function ReviewsPage() {
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => handleEditReview(review)}
-                                                    className="text-slate-400 hover:text-white h-9 px-3"
-                                                    title="Edit Review"
+                                                    onClick={() => {
+                                                        if (isLocked(review.id)) {
+                                                            toast.error(`Locked by ${getLock(review.id)?.username}`);
+                                                            return;
+                                                        }
+                                                        acquireLock(review.id);
+                                                        handleEditReview(review);
+                                                    }}
+                                                    className={`h-9 px-3 ${isLocked(review.id) ? "text-slate-600 cursor-not-allowed" : "text-slate-400 hover:text-white"}`}
+                                                    title={isLocked(review.id) ? `Locked by ${getLock(review.id)?.username}` : "Edit Review"}
+                                                    disabled={isLocked(review.id)}
                                                 >
                                                     <Pencil size={14} />
                                                 </Button>
@@ -948,7 +1013,7 @@ export default function ReviewsPage() {
                                             <Select
                                                 value={review.status}
                                                 onValueChange={(val) => handleStatusChange(review.id, val)}
-                                                disabled={!can.editReviews}
+                                                disabled={!can.editReviews || isLocked(review.id)}
                                             >
                                                 <SelectTrigger
                                                     className={`w-[140px] ${statusConfig[review.status]?.color || "bg-slate-600"} border-0 text-white font-medium transition-all duration-300 ${!can.editReviews ? "opacity-70 cursor-not-allowed" : ""}`}

@@ -130,6 +130,7 @@ export async function GET(request: NextRequest) {
             },
             createdBy: { select: { id: true, name: true } },
             updatedBy: { select: { id: true, name: true } },
+            liveBy: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: "asc" }, // Ascending needed for correct queue calculation
         take: 2000, // Safety cap

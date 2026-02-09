@@ -46,74 +46,119 @@ export function useLiveCheck(onComplete?: () => void) {
     // Track which reviews we've already dispatched updates for
     const processedResultsRef = useRef<Set<string>>(new Set());
 
-    // Poll for status
-    const checkStatus = useCallback(async () => {
-        try {
-            const res = await fetch("/api/automation/status", {
-                credentials: "include", // IMPORTANT: Include auth cookies
-            });
-            const data = await res.json();
+    // Ref to track status inside event listeners without triggering re-connects
+    const statusRef = useRef(status);
+    useEffect(() => {
+        statusRef.current = status;
+    }, [status]);
 
-            if (data.success && data.stats) {
-                setStats(data.stats);
-
-                // OPTIMISTIC UPDATES: Apply individual review updates via Redux
-                if (data.recentResults && data.recentResults.length > 0) {
-                    data.recentResults.forEach((result: RecentResult) => {
-                        if (!processedResultsRef.current.has(result.reviewId)) {
-                            console.log(`⚡ Optimistic update: ${result.reviewId} → ${result.status}`);
-                            dispatch(updateCheckStatus({
-                                id: result.reviewId,
-                                checkStatus: result.status,
-                                lastCheckedAt: result.completedAt,
-                            }));
-                            processedResultsRef.current.add(result.reviewId);
-                        }
-                    });
-                }
-
-                // LOGIC: Determine status based on pure stats
-                const isActive = data.stats.processing > 0 || data.stats.pending > 0;
-
-                if (isActive) {
-                    if (status !== "RUNNING") setStatus("RUNNING");
-                    hasCompletedRef.current = false;
-                } else {
-                    // No active jobs...
-                    if (data.stats.total > 0 && !hasCompletedRef.current) {
-                        // We have results and just finished!
-                        console.log("✅ Live Check Completed!");
-                        setStatus("COMPLETE");
-                        hasCompletedRef.current = true;
-                        toast.success(`Checks complete: ${data.stats.liveCount} live, ${data.stats.missingCount} missing`);
-                        onComplete?.();
-                    } else if (data.stats.total === 0) {
-                        // Reset to IDLE if no data at all
-                        if (status !== "IDLE" && status !== "STARTING") setStatus("IDLE");
+    // Initial Status Check (Sync state on mount)
+    useEffect(() => {
+        const fetchInitialStatus = async () => {
+            try {
+                const res = await fetch("/api/automation/status");
+                const data = await res.json();
+                if (data.success && data.stats) {
+                    setStats(data.stats);
+                    const isActive = data.stats.processing > 0 || data.stats.pending > 0;
+                    if (isActive) {
+                        setStatus("RUNNING");
+                        statusRef.current = "RUNNING";
+                        setIsOpen(true);
                     }
                 }
+            } catch (error) {
+                console.error("Initial status check failed:", error);
             }
-        } catch (error) {
-            console.error("Polling error:", error);
-        }
-    }, [status, dispatch, onComplete]);
+        };
 
-    // Polling Effect
+        fetchInitialStatus();
+    }, []);
+
+    // SSE Connection Effect
     useEffect(() => {
-        let interval: NodeJS.Timeout;
+        let eventSource: EventSource | null = null;
 
-        if (status === "STARTING" || status === "RUNNING") {
-            // Poll every 2 seconds
-            interval = setInterval(checkStatus, 2000);
-        } else if (status === "STOPPING") {
-            // Poll fast to catch the stop
-            interval = setInterval(checkStatus, 1000);
-        }
+        const connectSSE = () => {
+            if (eventSource) return;
+
+            console.log("🔌 Connecting to SSE...");
+            eventSource = new EventSource("/api/automation/sse", {
+                withCredentials: true,
+            });
+
+            eventSource.onopen = () => {
+                console.log("🟢 SSE Connected");
+            };
+
+            eventSource.onerror = (err) => {
+                // Only log error if not closed explicitly
+                if (eventSource?.readyState !== EventSource.CLOSED) {
+                    console.error("🔴 SSE Error:", err);
+                    eventSource?.close();
+                }
+            };
+
+            eventSource.addEventListener("stats", (event) => {
+                try {
+                    const newStats = JSON.parse(event.data);
+                    setStats(newStats);
+
+                    const isActive = newStats.processing > 0 || newStats.pending > 0;
+                    const currentStatus = statusRef.current;
+
+                    if (isActive) {
+                        if (currentStatus === "IDLE" || currentStatus === "COMPLETE") {
+                            setStatus("RUNNING");
+                            hasCompletedRef.current = false;
+                        }
+                    } else {
+                        if (newStats.total > 0 && !hasCompletedRef.current) {
+                            console.log("✅ Live Check Completed (SSE)");
+                            setStatus("COMPLETE");
+                            hasCompletedRef.current = true;
+                            toast.success(`Checks complete: ${newStats.liveCount} live, ${newStats.missingCount} missing`);
+                            onComplete?.();
+                        } else if (newStats.total === 0) {
+                            if (currentStatus !== "IDLE" && currentStatus !== "STARTING") {
+                                setStatus("IDLE");
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error parsing stats event:", e);
+                }
+            });
+
+            eventSource.addEventListener("result", (event) => {
+                try {
+                    const result = JSON.parse(event.data);
+                    console.log(`⚡ SSE Result: ${result.reviewId} → ${result.status}`);
+                    dispatch(updateCheckStatus({
+                        id: result.reviewId,
+                        checkStatus: result.status,
+                        lastCheckedAt: result.completedAt,
+                    }));
+                } catch (e) {
+                    console.error("Error parsing result event:", e);
+                }
+            });
+
+            eventSource.addEventListener("system-complete", () => {
+                console.log("🏁 System reported completion");
+            });
+        };
+
+        connectSSE();
 
         return () => {
-            if (interval) clearInterval(interval);
+            if (eventSource) {
+                console.log("🔌 Closing SSE connection");
+                eventSource.close();
+                eventSource = null;
+            }
         };
-    }, [status, checkStatus]);
+    }, [dispatch, onComplete]); // Removed 'status' dependency
 
     // Start Function - accepts optional concurrency (3, 5, or 10)
     const startChecks = async (reviewIds: string[], concurrency?: number) => {
@@ -122,7 +167,6 @@ export function useLiveCheck(onComplete?: () => void) {
         setStatus("STARTING");
         setIsOpen(true); // Auto-open panel when starting
         hasCompletedRef.current = false;
-        processedResultsRef.current.clear(); // Clear processed results for new run
 
         // Optimistically mark reviews as CHECKING in Redux
         dispatch(startCheckingReviews(reviewIds));
@@ -134,11 +178,11 @@ export function useLiveCheck(onComplete?: () => void) {
         });
 
         try {
-            // 1. Send start request with credentials and optional concurrency
+            // Send start request
             const res = await fetch("/api/automation/check", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                credentials: "include", // IMPORTANT: Include auth cookies
+                credentials: "include",
                 body: JSON.stringify({ reviewIds, concurrency }),
             });
 
@@ -148,11 +192,8 @@ export function useLiveCheck(onComplete?: () => void) {
                 throw new Error(errorData.error || "Failed to start checks");
             }
 
-            const data = await res.json();
-            console.log("✅ Checks started:", data);
-
-            // 2. Immediate status check to update UI
-            await checkStatus();
+            console.log("✅ Checks started command sent");
+            // SSE will handle the updates
 
         } catch (error) {
             console.error("Failed to start checks:", error);
@@ -170,7 +211,6 @@ export function useLiveCheck(onComplete?: () => void) {
                 credentials: "include",
             });
             toast.info("Stopping checks...");
-            // The polling will eventually catch the 'isStopped' state or 0 active jobs
         } catch (error) {
             console.error("Failed to stop:", error);
         }

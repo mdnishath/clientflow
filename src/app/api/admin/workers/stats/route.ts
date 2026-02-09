@@ -47,12 +47,23 @@ export async function GET() {
             _count: { id: true },
         });
 
+        // Get review counts for LIVE attribution (First LIVE Attribution)
+        const liveByStats = await prisma.review.groupBy({
+            by: ["liveById"],
+            where: {
+                liveById: { in: workerIds },
+                status: "LIVE",
+            },
+            _count: { id: true },
+        });
+
         // Build stats map per worker
         const statsMap: Record<string, {
             created: Record<string, number>;
             updated: Record<string, number>;
             totalCreated: number;
             totalUpdated: number;
+            totalLive: number; // First LIVE Attribution count
         }> = {};
 
         // Initialize with empty stats for all workers
@@ -62,6 +73,7 @@ export async function GET() {
                 updated: {},
                 totalCreated: 0,
                 totalUpdated: 0,
+                totalLive: 0,
             };
         }
 
@@ -78,6 +90,13 @@ export async function GET() {
             if (stat.updatedById && statsMap[stat.updatedById]) {
                 statsMap[stat.updatedById].updated[stat.status] = stat._count.id;
                 statsMap[stat.updatedById].totalUpdated += stat._count.id;
+            }
+        }
+
+        // Populate liveBy stats (First LIVE Attribution)
+        for (const stat of liveByStats) {
+            if (stat.liveById && statsMap[stat.liveById]) {
+                statsMap[stat.liveById].totalLive = stat._count.id;
             }
         }
 

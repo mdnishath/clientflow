@@ -16,6 +16,7 @@ export interface Review {
       companyName?: string;
     };
   };
+  reviewText?: string | null; // For content verification
 }
 
 export interface CheckResult {

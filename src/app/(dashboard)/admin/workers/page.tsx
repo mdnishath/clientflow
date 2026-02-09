@@ -44,6 +44,7 @@ interface WorkerStats {
         updated: Record<string, number>;
         totalCreated: number;
         totalUpdated: number;
+        totalLive: number;
     };
 }
 
@@ -258,7 +259,7 @@ export default function WorkersPage() {
                                         <tr key={ws.id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                                             <td className="py-2 px-3 text-white">{ws.name || ws.email}</td>
                                             <td className="py-2 px-3 text-center text-slate-300">{ws.stats.totalCreated}</td>
-                                            <td className="py-2 px-3 text-center text-green-400">{ws.stats.updated['LIVE'] || 0}</td>
+                                            <td className="py-2 px-3 text-center text-green-400">{ws.stats.totalLive || 0}</td>
                                             <td className="py-2 px-3 text-center text-purple-400">{ws.stats.updated['APPLIED'] || 0}</td>
                                             <td className="py-2 px-3 text-center text-emerald-400">{ws.stats.updated['DONE'] || 0}</td>
                                         </tr>

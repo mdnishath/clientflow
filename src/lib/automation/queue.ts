@@ -15,8 +15,8 @@ export interface RecentResult {
 export class AutomationQueue {
   private queue: QueueJob[] = [];
   private processing = new Set<string>();
-  private completed = new Map<string, "LIVE" | "MISSING" | "ERROR">();
-  private recentlyCompleted: RecentResult[] = []; // NEW: Track recent completions
+  // Store full result object in Map to persist for UI sync
+  private completed = new Map<string, { status: "LIVE" | "MISSING" | "ERROR"; completedAt: string }>();
   private maxConcurrency: number;
   private onStatusChange?: CheckStatusCallback;
   private isStopped = false;
@@ -87,12 +87,9 @@ export class AutomationQueue {
    */
   complete(reviewId: string, status: "LIVE" | "MISSING" | "ERROR"): void {
     this.processing.delete(reviewId);
-    this.completed.set(reviewId, status);
-    // Track for optimistic updates
-    this.recentlyCompleted.push({
-      reviewId,
+    this.completed.set(reviewId, {
       status,
-      completedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString()
     });
     console.log(`✔ Completed: ${reviewId} - ${status} (${this.processing.size} still processing)`);
   }
@@ -105,7 +102,7 @@ export class AutomationQueue {
     if (job.retryCount < 2 && !this.isStopped) {
       this.queue.push({ ...job, retryCount: job.retryCount + 1 });
     } else {
-      this.completed.set(job.reviewId, "ERROR");
+      this.complete(job.reviewId, "ERROR");
     }
   }
 
@@ -116,7 +113,7 @@ export class AutomationQueue {
     this.isStopped = true;
     // Mark pending as cancelled
     this.queue.forEach(job => {
-      this.completed.set(job.reviewId, "ERROR");
+      this.completed.set(job.reviewId, { status: "ERROR", completedAt: new Date().toISOString() });
     });
     this.queue = [];
   }
@@ -125,9 +122,10 @@ export class AutomationQueue {
    * Get detailed stats
    */
   getStats(): QueueStats {
-    const liveCount = Array.from(this.completed.values()).filter(s => s === "LIVE").length;
-    const missingCount = Array.from(this.completed.values()).filter(s => s === "MISSING").length;
-    const errorCount = Array.from(this.completed.values()).filter(s => s === "ERROR").length;
+    const values = Array.from(this.completed.values());
+    const liveCount = values.filter(v => v.status === "LIVE").length;
+    const missingCount = values.filter(v => v.status === "MISSING").length;
+    const errorCount = values.filter(v => v.status === "ERROR").length;
     const totalJobs = this.queue.length + this.processing.size + this.completed.size;
 
     return {
@@ -171,7 +169,6 @@ export class AutomationQueue {
     this.queue = [];
     this.processing.clear();
     this.completed.clear();
-    this.recentlyCompleted = [];
     this.isStopped = false;
   }
 
@@ -179,8 +176,13 @@ export class AutomationQueue {
    * Get and clear recent results (for optimistic UI updates)
    */
   getRecentResults(): RecentResult[] {
-    const results = [...this.recentlyCompleted];
-    this.recentlyCompleted = []; // Clear after reading
-    return results;
+    // Return ALL completed results for the current session/batch.
+    // Frontend handles deduplication via processedResultsRef.
+    // This solves the race condition where a poll misses the 'flash' of a result.
+    return Array.from(this.completed.entries()).map(([reviewId, data]) => ({
+      reviewId,
+      status: data.status,
+      completedAt: data.completedAt
+    }));
   }
 }

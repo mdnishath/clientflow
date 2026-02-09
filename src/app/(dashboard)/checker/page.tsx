@@ -53,6 +53,8 @@ import {
     type Review,
 } from "@/lib/features/reviewsSlice";
 import { toast } from "sonner";
+import { useReviewLocks } from "@/hooks/use-review-locks";
+import { Lock } from "lucide-react";
 
 const statusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
     PENDING: { label: "Pending", color: "bg-slate-500", icon: <Clock size={12} /> },
@@ -73,44 +75,73 @@ const copyToClipboard = async (text: string, label: string) => {
     }
 };
 
-function ReviewActionButtons({
-    gmbLink,
-    reviewLiveLink,
-    reviewText,
-    status,
-}: {
+interface ReviewActionButtonsProps {
+    reviewId: string;
     gmbLink: string | null;
     reviewLiveLink: string | null;
     reviewText: string | null;
     status: string;
-}) {
+    isLocked: boolean;
+    lockedBy?: string | null;
+    onAction: () => void; // Trigger lock acquisition
+}
+
+function ReviewActionButtons({
+    reviewId,
+    gmbLink,
+    reviewLiveLink,
+    reviewText,
+    status,
+    isLocked,
+    lockedBy,
+    onAction
+}: ReviewActionButtonsProps) {
     const showReviewActions = (status === "LIVE" || status === "DONE" || status === "APPLIED") && reviewLiveLink;
+
+    const handleAction = (cb: () => void) => {
+        if (isLocked) {
+            toast.error(`Locked by ${lockedBy}`);
+            return;
+        }
+        onAction(); // Acquire lock
+        cb();
+    };
 
     return (
         <div className="flex items-center gap-1">
             {reviewText && (
-                <CopyButton
-                    text={reviewText}
-                    className="h-8 w-8 p-0 text-slate-400 hover:text-white hover:bg-slate-700"
-                    variant="ghost"
-                    size="sm"
-                />
+                <div onClick={(e) => {
+                    if (isLocked) {
+                        e.stopPropagation();
+                        toast.error(`Locked by ${lockedBy}`);
+                    } else {
+                        onAction(); // Acquire lock on interaction
+                    }
+                }}>
+                    <CopyButton
+                        text={reviewText}
+                        className={`h-8 w-8 p-0 ${isLocked ? "text-slate-600 cursor-not-allowed pointer-events-none" : "text-slate-400 hover:text-white hover:bg-slate-700"}`}
+                        variant="ghost"
+                        size="sm"
+                    />
+                </div>
             )}
             {gmbLink && (
                 <>
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => copyToClipboard(gmbLink, "GMB Link")}
-                        className="h-8 w-8 p-0 text-slate-400 hover:text-white hover:bg-slate-700"
-                        title="Copy GMB Link"
+                        onClick={() => handleAction(() => copyToClipboard(gmbLink, "GMB Link"))}
+                        className={`h-8 w-8 p-0 ${isLocked ? "text-slate-600 cursor-not-allowed" : "text-slate-400 hover:text-white hover:bg-slate-700"}`}
+                        title={isLocked ? `Locked by ${lockedBy}` : "Copy GMB Link"}
+                        disabled={isLocked}
                     >
                         <Store size={14} />
                     </Button>
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => window.open(gmbLink, "_blank")}
+                        onClick={() => handleAction(() => window.open(gmbLink, "_blank"))}
                         className="h-8 w-8 p-0 text-slate-400 hover:text-white hover:bg-slate-700"
                         title="Visit GMB Profile"
                     >
@@ -147,7 +178,8 @@ function ReviewActionButtons({
 
 export default function CheckerPage() {
     const dispatch = useAppDispatch();
-    const { items: reviews, meta, loading } = useAppSelector((state) => state.reviews);
+    const { items: allReviews, meta, loading } = useAppSelector((state) => state.reviews);
+
     const searchParams = useSearchParams();
 
     // Read checkStatus from URL if coming from dashboard
@@ -157,6 +189,8 @@ export default function CheckerPage() {
     const [loadMode, setLoadMode] = useState<"paginated" | "all">("paginated");
     const [statusFilter, setStatusFilter] = useState("not-PENDING");
     const [checkStatusFilter, setCheckStatusFilter] = useState(urlCheckStatus || "all");
+    const [profileFilter, setProfileFilter] = useState("all");
+    const [profiles, setProfiles] = useState<{ id: string; businessName: string }[]>([]);
     const [search, setSearch] = useState("");
     const [showArchived, setShowArchived] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -180,7 +214,36 @@ export default function CheckerPage() {
         reset
     } = useLiveCheck();
 
+    // Lock Management
+    const { isLocked, getLock, acquireLock, releaseLock, currentUser } = useReviewLocks();
+
     const isChecking = checkStatus === "STARTING" || checkStatus === "RUNNING";
+
+    // Client-side filtering to ensure real-time updates respect the current view
+    // MOVED here to avoid ReferenceError (must be after state init)
+    const reviews = allReviews.filter(r => {
+        // Status Filter
+        if (statusFilter !== "all") {
+            if (statusFilter === "not-PENDING") {
+                if (r.status === "PENDING") return false;
+            } else if (r.status !== statusFilter) {
+                return false;
+            }
+        }
+        // Check Status Filter
+        if (checkStatusFilter !== "all" && r.checkStatus !== checkStatusFilter) {
+            return false;
+        }
+        return true;
+    });
+
+    // Fetch profiles for filter dropdown
+    useEffect(() => {
+        fetch("/api/profiles?limit=500")
+            .then(res => res.json())
+            .then(data => setProfiles(data.profiles || []))
+            .catch(() => { });
+    }, []);
 
     // Fetch reviews
     const fetchReviewsData = useCallback(async () => {
@@ -191,6 +254,7 @@ export default function CheckerPage() {
             checkStatus?: string;
             search?: string;
             isArchived?: boolean;
+            profileId?: string;
         } = {
             page: loadMode === "all" ? 1 : page,
             limit: loadMode === "all" ? 1000 : 20
@@ -198,16 +262,17 @@ export default function CheckerPage() {
 
         if (statusFilter !== "all") params.status = statusFilter;
         if (checkStatusFilter !== "all") params.checkStatus = checkStatusFilter;
+        if (profileFilter !== "all") params.profileId = profileFilter;
         if (search) params.search = search;
         if (showArchived) params.isArchived = true;
 
         await dispatch(fetchReviews(params));
-    }, [dispatch, page, loadMode, statusFilter, checkStatusFilter, search, showArchived]);
+    }, [dispatch, page, loadMode, statusFilter, checkStatusFilter, profileFilter, search, showArchived]);
 
     useEffect(() => {
         setPage(1);
         setSelectedIds([]);
-    }, [statusFilter, checkStatusFilter, search, showArchived]);
+    }, [statusFilter, checkStatusFilter, profileFilter, search, showArchived]);
 
     useEffect(() => {
         fetchReviewsData();
@@ -416,6 +481,22 @@ export default function CheckerPage() {
                     </SelectContent>
                 </Select>
 
+                {/* Profile Filter */}
+                <Select value={profileFilter} onValueChange={setProfileFilter}>
+                    <SelectTrigger className="w-[180px] bg-slate-800/50 border-slate-700 text-white">
+                        <Store size={14} className="mr-2" />
+                        <SelectValue placeholder="Profile" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700 max-h-[300px]">
+                        <SelectItem value="all">All Profiles</SelectItem>
+                        {profiles.map((profile) => (
+                            <SelectItem key={profile.id} value={profile.id}>
+                                {profile.businessName}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+
                 <Select value={checkStatusFilter} onValueChange={setCheckStatusFilter}>
                     <SelectTrigger className="w-[150px] bg-slate-800/50 border-slate-700 text-white">
                         <CheckCircle2 size={14} className="mr-2" />
@@ -601,7 +682,9 @@ export default function CheckerPage() {
                         return (
                             <Card
                                 key={review.id}
-                                className={`border-slate-700 hover:bg-slate-800/70 transition-colors ${isSelected ? "ring-2 ring-indigo-500 bg-indigo-600/10" : "bg-slate-800/50"
+                                className={`transition-colors ${isLocked(review.id)
+                                    ? "border-amber-500/30 bg-amber-500/5 opacity-75"
+                                    : `border-slate-700 hover:bg-slate-800/70 ${isSelected ? "ring-2 ring-indigo-500 bg-indigo-600/10" : "bg-slate-800/50"}`
                                     }`}
                             >
                                 <CardContent className="p-4">
@@ -631,9 +714,9 @@ export default function CheckerPage() {
                                                         </Badge>
                                                     )}
                                                     {/* Attribution */}
-                                                    {review.status === "LIVE" && review.updatedBy ? (
+                                                    {review.status === "LIVE" && (review.liveBy?.name || review.updatedBy?.name) ? (
                                                         <span className="text-green-400 text-xs font-medium">
-                                                            Live by {review.updatedBy.name}
+                                                            Live by {review.liveBy?.name || review.updatedBy?.name}
                                                         </span>
                                                     ) : review.status === "APPLIED" && review.updatedBy ? (
                                                         <span className="text-purple-400 text-xs font-medium">
@@ -700,6 +783,15 @@ export default function CheckerPage() {
                                                             Note: {review.notes}
                                                         </span>
                                                     )}
+                                                    {/* Lock Indicator */}
+                                                    {getLock(review.id) && (
+                                                        <Badge variant="outline" className="text-amber-500 border-amber-500/50 bg-amber-500/10 gap-1 pl-1 pr-2">
+                                                            <Lock size={10} />
+                                                            {getLock(review.id)?.userId === currentUser?.id
+                                                                ? "Editing by You"
+                                                                : `Locked by ${getLock(review.id)?.username}`}
+                                                        </Badge>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -707,19 +799,31 @@ export default function CheckerPage() {
                                         {/* Actions - PROFILE PAGE STYLE */}
                                         <div className="flex items-center gap-2">
                                             <ReviewActionButtons
+                                                reviewId={review.id}
                                                 gmbLink={review.profile.gmbLink}
                                                 reviewLiveLink={review.reviewLiveLink}
                                                 reviewText={review.reviewText}
                                                 status={review.status}
+                                                isLocked={isLocked(review.id)}
+                                                lockedBy={getLock(review.id)?.username}
+                                                onAction={() => acquireLock(review.id)}
                                             />
 
                                             {/* Edit Button */}
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                onClick={() => handleEditReview(review)}
-                                                className="text-slate-400 hover:text-white h-9 px-3"
-                                                title="Edit Review"
+                                                onClick={() => {
+                                                    if (isLocked(review.id)) {
+                                                        toast.error(`Locked by ${getLock(review.id)?.username}`);
+                                                        return;
+                                                    }
+                                                    acquireLock(review.id);
+                                                    handleEditReview(review);
+                                                }}
+                                                className={`h-9 px-3 ${isLocked(review.id) ? "text-slate-600 cursor-not-allowed" : "text-slate-400 hover:text-white"}`}
+                                                title={isLocked(review.id) ? `Locked by ${getLock(review.id)?.username}` : "Edit Review"}
+                                                disabled={isLocked(review.id)}
                                             >
                                                 <Pencil size={14} />
                                             </Button>
@@ -728,6 +832,7 @@ export default function CheckerPage() {
                                             <Select
                                                 value={review.status}
                                                 onValueChange={(val) => handleStatusChange(review.id, val)}
+                                                disabled={isLocked(review.id)}
                                             >
                                                 <SelectTrigger
                                                     className={`w-[140px] ${statusConfig[review.status]?.color || "bg-slate-600"} border-0 text-white font-medium transition-all duration-300`}

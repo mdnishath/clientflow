@@ -59,6 +59,7 @@ model User {
   reviews          Review[]  @relation("UserReviews")
   reviewsCreated   Review[]  @relation("ReviewsCreatedBy")
   reviewsUpdated   Review[]  @relation("ReviewsUpdatedBy")
+  reviewsLive      Review[]  @relation("ReviewsLiveBy")
   reviewTemplates  ReviewTemplate[]
   reviewContexts   ReviewContext[]
   notifications    Notification[]
@@ -164,6 +165,10 @@ model Review {
   createdById    String?      @map("created_by_id")
   updatedById    String?      @map("updated_by_id")
 
+  // First LIVE Attribution (Permanent - for salary calculation)
+  liveById       String?      @map("live_by_id")
+  liveAt         DateTime?    @map("live_at")
+
   // Live Check Automation Fields
   lastCheckedAt  DateTime?    @map("last_checked_at")
   checkStatus    String?      @map("check_status") // "LIVE", "MISSING", "ERROR", "CHECKING"
@@ -175,6 +180,7 @@ model Review {
   reviewTags ReviewTag[]
   createdBy  User?       @relation("ReviewsCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy  User?       @relation("ReviewsUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  liveBy     User?       @relation("ReviewsLiveBy", fields: [liveById], references: [id], onDelete: SetNull)
 
   // Performance indexes
   @@index([userId])
@@ -187,6 +193,7 @@ model Review {
   @@index([checkStatus])
   @@index([createdById])
   @@index([updatedById])
+  @@index([liveById])
   @@map("reviews")
 }
 

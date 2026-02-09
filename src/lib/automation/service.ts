@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { LiveChecker } from "./checker";
 import { AutomationQueue } from "./queue";
 import { Review, QueueJob, CheckResult } from "./types";
+import { automationEvents } from "./events";
 
 class AutomationService {
   // Map userId -> AutomationQueue
@@ -73,13 +74,17 @@ class AutomationService {
           // For ADMIN, they might trigger checks for any client. 
           // So we trust the caller (API route) to have verified permissions.
         },
-        include: {
+        select: {
+          id: true,
+          reviewLiveLink: true,
+          profileId: true,
+          reviewText: true,
           profile: {
             select: {
               businessName: true,
-            },
-          },
-        },
+            }
+          }
+        }
       });
 
       if (reviews.length === 0) {
@@ -134,6 +139,9 @@ class AutomationService {
 
     // Simple loop to check if ANY queue has work
     const hasWork = () => {
+      // Emit stats update to all connected clients
+      // We could optimize this to only emit on change, but for now simple heartbeat is fine
+      // Or better: emit stats logic inside the loop
       for (const queue of this.queues.values()) {
         if (!queue.isEmpty()) return true;
       }
@@ -159,7 +167,7 @@ class AutomationService {
           // For now, let's assume per-user limits are fine, but we serialize the *browser* ops to avoid crashes?
           // The `processJob` IS async but we don't await it here to allow parallelism.
 
-          this.processJob(job, queue).catch((error) => {
+          this.processJob(job, queue, userId).catch((error) => {
             console.error(`❌ Error processing job ${job.reviewId}:`, error);
             queue.complete(job.reviewId, "ERROR");
           });
@@ -176,24 +184,51 @@ class AutomationService {
     }
 
     console.log("✅ All queues empty, processor stopping");
+    automationEvents.emit("complete", { timestamp: new Date().toISOString() });
     await this.checker.close();
     this.isProcessing = false;
   }
 
-  private async processJob(job: QueueJob, queue: AutomationQueue): Promise<void> {
-    // ... same logic as before ...
+  private async processJob(job: QueueJob, queue: AutomationQueue, userId: string): Promise<void> {
     console.log(`🔍 Checking review: ${job.reviewId}`);
     try {
       const result = await this.checker.checkReview(job.review);
       await this.updateReviewResult(result);
       queue.complete(job.reviewId, result.status); // Use user's queue
       console.log(`✅ Completed: ${job.reviewId} - ${result.status}`);
+
+      // Emit result with userId
+      automationEvents.emit("result", {
+        userId,
+        reviewId: job.reviewId,
+        status: result.status,
+        completedAt: new Date().toISOString()
+      });
+
+      // Emit updated stats for this user
+      automationEvents.emit("stats", {
+        userId,
+        stats: queue.getStats()
+      });
+
     } catch (error) {
       console.error(`❌ Failed to check review ${job.reviewId}:`, error);
       if (job.retryCount < 2) {
         queue.retry(job);
       } else {
         queue.complete(job.reviewId, "ERROR");
+        // Emit error result
+        automationEvents.emit("result", {
+          userId,
+          reviewId: job.reviewId,
+          status: "ERROR",
+          completedAt: new Date().toISOString()
+        });
+        // Emit updated stats
+        automationEvents.emit("stats", {
+          userId,
+          stats: queue.getStats()
+        });
       }
     }
   }
@@ -244,6 +279,12 @@ class AutomationService {
   // ... helper DB update methods (unchanged) ...
   private async updateReviewResult(result: CheckResult): Promise<void> {
     try {
+      // First, fetch existing review to check if liveById is already set
+      const existing = await prisma.review.findUnique({
+        where: { id: result.reviewId },
+        select: { liveById: true },
+      });
+
       const updateData: any = {
         lastCheckedAt: result.checkedAt,
         checkStatus: result.status,
@@ -255,6 +296,10 @@ class AutomationService {
         updateData.status = "LIVE";
         // Also set completedAt so it counts towards daily progress
         updateData.completedAt = new Date();
+
+        // First LIVE Attribution: Only set liveById if not already set
+        // Note: For automation, we don't have a userId context, so we skip liveById here
+        // The manual status change in API will handle liveById attribution
       } else if (result.status === "MISSING") {
         // If checker says missing, update main status to MISSING
         updateData.status = "MISSING";
@@ -281,4 +326,8 @@ class AutomationService {
   }
 }
 
-export const automationService = new AutomationService();
+const globalForAutomation = global as unknown as { automationService: AutomationService };
+
+export const automationService = globalForAutomation.automationService || new AutomationService();
+
+if (process.env.NODE_ENV !== "production") globalForAutomation.automationService = automationService;

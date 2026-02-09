@@ -18,6 +18,7 @@ export interface Review {
     scheduledFor?: string | null;
     createdBy?: { id: string; name: string | null } | null;
     updatedBy?: { id: string; name: string | null } | null;
+    liveBy?: { id: string; name: string | null } | null;
     profile: {
         id: string;
         businessName: string;
@@ -199,6 +200,15 @@ const reviewsSlice = createSlice({
             if (review) {
                 review.checkStatus = checkStatus;
                 if (lastCheckedAt) review.lastCheckedAt = lastCheckedAt;
+
+                // CRITICAL: Sync main status if check result is definitive (LIVE/MISSING)
+                // This mimics the server-side DB update logic
+                if (checkStatus === "LIVE") {
+                    review.status = "LIVE";
+                } else if (checkStatus === "MISSING") {
+                    review.status = "MISSING";
+                }
+
                 // Remove from checking list if final status
                 if (checkStatus !== "CHECKING") {
                     state.checkingIds = state.checkingIds.filter((rid) => rid !== id);

@@ -15,6 +15,7 @@ import { DeletePendingButton } from "@/components/dashboard/delete-pending-butto
 import { UpdateLimitButton } from "@/components/dashboard/update-limit-button";
 import { UpdateStartDateButton } from "@/components/dashboard/update-start-date-button";
 import { RescheduleButton } from "@/components/dashboard/reschedule-button";
+import { CleanupButton } from "@/components/dashboard/cleanup-button";
 import Link from "next/link";
 
 interface ReviewWithProfile {
@@ -229,6 +230,7 @@ export default async function DashboardPage() {
                         <UpdateLimitButton />
                         <DeletePendingButton />
                         <AutoFillButton />
+                        <CleanupButton />
                     </div>
                 )}
             </div>

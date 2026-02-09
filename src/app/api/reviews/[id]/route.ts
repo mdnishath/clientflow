@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
 import { getClientScope } from "@/lib/rbac";
+import { automationEvents } from "@/lib/automation/events";
 import { NextRequest, NextResponse } from "next/server";
 
 interface RouteParams {
@@ -68,11 +69,14 @@ export async function PATCH(
         const existing = await prisma.review.findFirst({
             where: whereClause,
             include: { profile: { select: { businessName: true } } },
+            // We need liveById for First LIVE Attribution logic
         });
 
         if (!existing) {
             return NextResponse.json({ error: "Review not found" }, { status: 404 });
         }
+
+        // liveById is already included in the default select (column exists in Review model)
 
         const body = await request.json();
         const { reviewText, reviewLiveLink, emailUsed, status, dueDate, notes, isArchived } = body;
@@ -81,6 +85,15 @@ export async function PATCH(
         let completedAt = existing.completedAt;
         if (status === "DONE" || status === "LIVE") {
             completedAt = completedAt || new Date();
+        }
+
+        // First LIVE Attribution: Only set liveById if not already set
+        let liveByData: { liveById?: string; liveAt?: Date } = {};
+        if (status === "LIVE" && !existing.liveById) {
+            liveByData = {
+                liveById: scope.actualUserId,
+                liveAt: new Date(),
+            };
         }
 
         const review = await prisma.review.update({
@@ -95,6 +108,7 @@ export async function PATCH(
                 ...(isArchived !== undefined && { isArchived }),
                 completedAt,
                 updatedById: scope.actualUserId, // Track who updated this review
+                ...liveByData, // First LIVE Attribution
             },
             include: {
                 profile: {
@@ -165,6 +179,9 @@ export async function PATCH(
                 link: `/reviews`,
             });
         }
+
+        // Broadcast update (real-time)
+        automationEvents.emit("review-updated", review);
 
         return NextResponse.json(review);
     } catch (error) {
