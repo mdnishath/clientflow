@@ -34,11 +34,7 @@ export async function POST(request: NextRequest) {
       automationService.updateConcurrency(concurrency);
     }
 
-    // Restart browser between batches if this is a batch operation
-    if (batchInfo?.isBatch && batchInfo.batchNumber > 1) {
-      console.log(`♻ Restarting browser for batch ${batchInfo.batchNumber}/${batchInfo.totalBatches}`);
-      await automationService.restartBrowser();
-    }
+    // No need to restart browser - each check uses fresh browser
 
     // Start automation with batch options
     const result = await automationService.startChecks(

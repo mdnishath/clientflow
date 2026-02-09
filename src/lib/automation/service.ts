@@ -1,63 +1,186 @@
 /**
  * Live Check Automation - Service Orchestrator
- *
- * Main service that coordinates queue, checker, and database updates
+ * EXACT SAME ARCHITECTURE as your 100% working Express app
  */
 
 import { prisma } from "@/lib/prisma";
 import { LiveChecker } from "./checker";
-import { AutomationQueue } from "./queue";
-import { Review, QueueJob, CheckResult } from "./types";
+import { Review, CheckResult } from "./types";
 import { automationEvents } from "./events";
 
+interface AutomationState {
+  isChecking: boolean;
+  totalTasks: number;
+  completedTasks: number;
+  activeThreads: number;
+  maxThreads: number;
+  queue: Review[];
+  currentlyChecking: Array<{ id: string; thread: number; activity: string }>;
+  userId: string | null;
+  // Track results for real-time stats
+  liveCount: number;
+  missingCount: number;
+  errorCount: number;
+}
+
 class AutomationService {
-  // Map userId -> AutomationQueue
-  private queues = new Map<string, AutomationQueue>();
   private checker: LiveChecker;
-  private isProcessing = false;
-  private defaultConcurrency = 5;
+  private state: AutomationState = {
+    isChecking: false,
+    totalTasks: 0,
+    completedTasks: 0,
+    activeThreads: 0,
+    maxThreads: 5,
+    queue: [],
+    currentlyChecking: [],
+    userId: null,
+    liveCount: 0,
+    missingCount: 0,
+    errorCount: 0,
+  };
 
   constructor() {
     this.checker = new LiveChecker();
   }
 
   /**
-   * Get or create a queue for a specific user
+   * Add log entry
    */
-  private getQueue(userId: string): AutomationQueue {
-    if (!this.queues.has(userId)) {
-      console.log(`🆕 Creating new queue for user: ${userId}`);
-      // Create new queue with callback bound to this service
-      this.queues.set(userId, new AutomationQueue(this.defaultConcurrency, this.updateCheckStatus.bind(this)));
-    }
-    return this.queues.get(userId)!;
+  private addLog(msg: string): void {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[${timestamp}] ${msg}`);
   }
 
   /**
-   * Update global concurrency limit for all queues
+   * Update concurrency (thread count)
    */
   updateConcurrency(concurrency: number): { success: boolean; message: string; concurrency: number } {
-    this.defaultConcurrency = concurrency;
-
-    // Update all active queues
-    let updatedCount = 0;
-    for (const queue of this.queues.values()) {
-      queue.setConcurrency(concurrency);
-      updatedCount++;
-    }
-
-    console.log(`⚙ Updated concurrency to ${concurrency} for ${updatedCount} active queues`);
+    this.state.maxThreads = Math.max(1, Math.min(10, concurrency));
+    console.log(`⚙ Updated concurrency to ${this.state.maxThreads}`);
 
     return {
       success: true,
-      message: `Concurrency updated to ${concurrency} (applied to ${updatedCount} active queues)`,
-      concurrency
+      message: `Concurrency updated to ${this.state.maxThreads}`,
+      concurrency: this.state.maxThreads
     };
   }
 
   /**
-   * Start checking reviews for a specific user
-   * Supports batch metadata for large-scale operations
+   * Update session activity (like "NAVIGATING...", "AUDITING DOM...")
+   */
+  private updateSession(taskId: string, activity: string): void {
+    const idx = this.state.currentlyChecking.findIndex((c) => c.id === taskId);
+    if (idx !== -1) {
+      this.state.currentlyChecking[idx].activity = activity;
+    }
+  }
+
+  /**
+   * Process a single review check (equivalent to checkReviewLink)
+   */
+  private async checkReview(review: Review, threadIndex: number): Promise<void> {
+    const taskId = review.id;
+
+    try {
+      this.addLog(`Node #${threadIndex}: Starting check for ${taskId.slice(-5)}`);
+
+      // Use the LiveChecker to check the review
+      const result = await this.checker.checkReview(review);
+
+      // Update database
+      await this.updateReviewResult(result);
+
+      this.addLog(
+        `Node #${threadIndex}: [${result.status.toUpperCase()}] -> ${review.id.slice(-5)}`
+      );
+
+      // Update stats counters based on result
+      if (result.status === "LIVE") {
+        this.state.liveCount++;
+      } else if (result.status === "MISSING") {
+        this.state.missingCount++;
+      } else if (result.status === "ERROR") {
+        this.state.errorCount++;
+      }
+
+      // Emit result event
+      automationEvents.emit("result", {
+        userId: this.state.userId!,
+        reviewId: review.id,
+        status: result.status,
+        completedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      this.addLog(
+        `Node #${threadIndex}: ERROR/TIMEOUT (${err.message?.slice(0, 30) || "Unknown error"})`
+      );
+
+      // Update error count
+      this.state.errorCount++;
+
+      // Emit error result
+      automationEvents.emit("result", {
+        userId: this.state.userId!,
+        reviewId: review.id,
+        status: "ERROR",
+        completedAt: new Date().toISOString(),
+      });
+    } finally {
+      // Thread completed
+      this.state.activeThreads--;
+      this.state.completedTasks++;
+      this.state.currentlyChecking = this.state.currentlyChecking.filter(
+        (c) => c.id !== taskId
+      );
+
+      // Emit updated stats
+      automationEvents.emit("stats", {
+        userId: this.state.userId!,
+        stats: this.getQueueStats(this.state.userId!),
+      });
+
+      // Process next in queue
+      this.processQueue();
+    }
+  }
+
+  /**
+   * Process queue - EXACT SAME LOGIC as Express app
+   */
+  private processQueue(): void {
+    // KEY: Check isChecking flag first (same as Express app)
+    if (!this.state.isChecking || this.state.queue.length === 0) {
+      if (this.state.activeThreads === 0) {
+        this.state.isChecking = false;
+        this.addLog("Engine: Batch Process Finalized.");
+        automationEvents.emit("complete", { timestamp: new Date().toISOString() });
+      }
+      return;
+    }
+
+    // Start new threads up to maxThreads limit
+    while (
+      this.state.activeThreads < this.state.maxThreads &&
+      this.state.queue.length > 0
+    ) {
+      const review = this.state.queue.shift()!;
+      this.state.activeThreads++;
+      const threadIndex = this.state.activeThreads;
+
+      // Add to currently checking list
+      this.state.currentlyChecking.push({
+        id: review.id,
+        thread: threadIndex,
+        activity: "Initializing...",
+      });
+
+      // Start check (non-blocking)
+      this.checkReview(review, threadIndex);
+    }
+  }
+
+  /**
+   * Start checks - EXACT SAME LOGIC as Express /automation/start
    */
   async startChecks(
     reviewIds: string[],
@@ -74,99 +197,69 @@ class AutomationService {
         : '';
 
       console.log("=".repeat(80));
-      console.log(`🎬 START CHECKS CALLED for user ${userId} (${reviewIds.length} reviews)${batchInfo}`);
+      console.log(`🎬 START CHECKS for user ${userId} (${reviewIds.length} reviews)${batchInfo}`);
 
-      // Fetch reviews from database in chunks to prevent memory issues
-      // For large batches (>500), use pagination
-      const CHUNK_SIZE = 500;
-      let allReviews: any[] = [];
-
-      if (reviewIds.length > CHUNK_SIZE) {
-        console.log(`📊 Large batch detected, fetching in chunks of ${CHUNK_SIZE}...`);
-        for (let i = 0; i < reviewIds.length; i += CHUNK_SIZE) {
-          const chunk = reviewIds.slice(i, i + CHUNK_SIZE);
-          const chunkReviews = await prisma.review.findMany({
-            where: {
-              id: { in: chunk },
-              reviewLiveLink: { not: null },
-            },
+      // Fetch reviews from database
+      const reviews = await prisma.review.findMany({
+        where: {
+          id: { in: reviewIds },
+          reviewLiveLink: { not: null },
+        },
+        select: {
+          id: true,
+          reviewLiveLink: true,
+          profileId: true,
+          reviewText: true,
+          profile: {
             select: {
-              id: true,
-              reviewLiveLink: true,
-              profileId: true,
-              reviewText: true,
-              profile: {
-                select: {
-                  businessName: true,
-                }
-              }
-            }
-          });
-          allReviews = allReviews.concat(chunkReviews);
-          console.log(`  ✓ Fetched chunk ${Math.floor(i / CHUNK_SIZE) + 1}: ${chunkReviews.length} reviews`);
-        }
-      } else {
-        allReviews = await prisma.review.findMany({
-          where: {
-            id: { in: reviewIds },
-            reviewLiveLink: { not: null },
-          },
-          select: {
-            id: true,
-            reviewLiveLink: true,
-            profileId: true,
-            reviewText: true,
-            profile: {
-              select: {
-                businessName: true,
-              }
+              businessName: true,
             }
           }
-        });
-      }
+        }
+      });
 
-      if (allReviews.length === 0) {
+      if (reviews.length === 0) {
         return {
           success: false,
           message: "No valid reviews found with live links",
         };
       }
 
-      console.log(`✅ Found ${allReviews.length} valid reviews${batchInfo}`);
+      console.log(`✅ Found ${reviews.length} valid reviews${batchInfo}`);
 
-      // Add to user's queue
-      const jobs: QueueJob[] = allReviews.map((review) => ({
-        reviewId: review.id,
-        review: review as Review,
-        retryCount: 0,
-      }));
+      // SAME AS EXPRESS: Reset state and start
+      this.state = {
+        isChecking: true,
+        totalTasks: reviews.length,
+        completedTasks: 0,
+        activeThreads: 0,
+        maxThreads: this.state.maxThreads,
+        queue: reviews as Review[],
+        currentlyChecking: [],
+        userId,
+        liveCount: 0,     // Reset counters
+        missingCount: 0,
+        errorCount: 0,
+      };
 
-      const queue = this.getQueue(userId);
-      console.log(`📊 BEFORE adding to queue (${userId}):`, queue.getStats());
-      queue.add(jobs);
-      console.log(`📊 AFTER adding to queue (${userId}):`, queue.getStats());
+      this.addLog(`Audit Sequence Engaged${batchInfo}`);
 
-      // Emit initial stats update with batch info
+      // Emit initial stats
       automationEvents.emit("stats", {
         userId,
-        stats: queue.getStats(),
+        stats: this.getQueueStats(userId),
         batchInfo: options?.isBatch ? {
           current: options.batchNumber,
           total: options.totalBatches
         } : undefined
       });
 
-      // Start processing global loop if not running
-      if (!this.isProcessing) {
-        console.log("🚀 Starting global queue processor");
-        this.processQueues();
-      } else {
-        console.log("⏳ Queue processor already running");
-      }
+      // Start processing (each check creates its own browser)
+      this.processQueue();
 
       return {
         success: true,
-        message: `${allReviews.length} review(s) added to queue${batchInfo}`,
+        message: `${reviews.length} review(s) added to queue${batchInfo}`,
       };
     } catch (error) {
       console.error("Error starting checks:", error);
@@ -178,171 +271,86 @@ class AutomationService {
   }
 
   /**
-   * Global processor to handle all user queues round-robin style
+   * Stop checks - EXACT SAME LOGIC as Express /automation/stop
    */
-  private async processQueues(): Promise<void> {
-    this.isProcessing = true;
-
-    // Simple loop to check if ANY queue has work
-    const hasWork = () => {
-      // Emit stats update to all connected clients
-      // We could optimize this to only emit on change, but for now simple heartbeat is fine
-      // Or better: emit stats logic inside the loop
-      for (const queue of this.queues.values()) {
-        if (!queue.isEmpty()) return true;
-      }
-      return false;
-    };
-
-    try {
-      while (hasWork()) {
-        let didWork = false;
-
-        // Round-robin through all active user queues
-        for (const [userId, queue] of this.queues.entries()) {
-          const job = queue.getNext();
-
-          if (job) {
-            didWork = true;
-            console.log(`📋 Processing job for user ${userId}: ${job.reviewId}`);
-
-            // Emit stats update (Now processing)
-            automationEvents.emit("stats", {
-              userId,
-              stats: queue.getStats()
-            });
-
-            this.processJob(job, queue, userId).catch((error) => {
-              console.error(`❌ Error processing job ${job.reviewId}:`, error);
-              queue.complete(job.reviewId, "ERROR");
-            });
-
-            // Small delay between assigning jobs to different users
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-        }
-
-        if (!didWork) {
-          // Wait a bit if no queues had ready jobs (stats valid but maybe max concurrency reached)
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-      }
-    } catch (error) {
-      console.error("FATAL: Queue processor crashed:", error);
-    } finally {
-      console.log("✅ All queues empty, processor stopping");
-      automationEvents.emit("complete", { timestamp: new Date().toISOString() });
-      await this.checker.close();
-      this.isProcessing = false;
-    }
-  }
-
-  private async processJob(job: QueueJob, queue: AutomationQueue, userId: string): Promise<void> {
-    console.log(`🔍 Checking review: ${job.reviewId}`);
-    try {
-      const result = await this.checker.checkReview(job.review);
-      await this.updateReviewResult(result);
-      queue.complete(job.reviewId, result.status); // Use user's queue
-      console.log(`✅ Completed: ${job.reviewId} - ${result.status}`);
-
-      // Emit result with userId
-      automationEvents.emit("result", {
-        userId,
-        reviewId: job.reviewId,
-        status: result.status,
-        completedAt: new Date().toISOString()
-      });
-
-      // Emit updated stats for this user
-      automationEvents.emit("stats", {
-        userId,
-        stats: queue.getStats()
-      });
-
-    } catch (error) {
-      console.error(`❌ Failed to check review ${job.reviewId}:`, error);
-      if (job.retryCount < 2) {
-        queue.retry(job);
-      } else {
-        queue.complete(job.reviewId, "ERROR");
-        // Emit error result
-        automationEvents.emit("result", {
-          userId,
-          reviewId: job.reviewId,
-          status: "ERROR",
-          completedAt: new Date().toISOString()
-        });
-        // Emit updated stats
-        automationEvents.emit("stats", {
-          userId,
-          stats: queue.getStats()
-        });
-      }
-    }
-  }
-
   stopChecks(userId: string): { success: boolean; message: string } {
-    const queue = this.queues.get(userId);
-    if (queue) {
-      queue.stop();
-      return { success: true, message: "Checks stopped" };
-    }
-    return { success: false, message: "No active queue found" };
-  }
+    console.log(`🛑 STOP requested for user ${userId}`);
 
-  getQueueStats(userId: string) {
-    // If no queue exists, return empty stats
-    if (!this.queues.has(userId)) {
-      return {
-        pending: 0,
-        processing: 0,
-        completed: 0,
-        total: 0,
-        liveCount: 0,
-        missingCount: 0,
-        errorCount: 0,
-        isStopped: false,
-        progress: 0
-      };
-    }
-    return this.queues.get(userId)!.getStats();
-  }
+    // KEY: Immediately set flag to false and clear queue
+    this.state.isChecking = false;
+    this.state.queue = [];
 
-  resetQueue(userId: string): { success: boolean; message: string } {
-    const queue = this.queues.get(userId);
-    if (queue) {
-      queue.reset();
-      // Optionally remove the queue from map if empty?
-      // this.queues.delete(userId);
-      return { success: true, message: "Queue reset successfully" };
-    }
-    return { success: false, message: "No active queue to reset" };
-  }
+    this.addLog("Audit Aborted by User.");
 
-  getRecentResults(userId: string) {
-    const queue = this.queues.get(userId);
-    return queue ? queue.getRecentResults() : [];
+    // Emit final stats
+    automationEvents.emit("stats", {
+      userId,
+      stats: this.getQueueStats(userId)
+    });
+
+    return { success: true, message: "Stopped" };
   }
 
   /**
-   * Wait for user's queue to complete (for batch processing)
+   * Get queue stats with real-time counts
+   */
+  getQueueStats(userId: string) {
+    return {
+      pending: this.state.queue.length,
+      processing: this.state.activeThreads,
+      completed: this.state.completedTasks,
+      total: this.state.totalTasks,
+      liveCount: this.state.liveCount,      // ✅ Real count
+      missingCount: this.state.missingCount, // ✅ Real count
+      errorCount: this.state.errorCount,     // ✅ Real count
+      isStopped: !this.state.isChecking,
+      progress: this.state.totalTasks > 0
+        ? Math.round((this.state.completedTasks / this.state.totalTasks) * 100)
+        : 0,
+    };
+  }
+
+  /**
+   * Reset queue
+   */
+  resetQueue(userId: string): { success: boolean; message: string } {
+    this.state = {
+      isChecking: false,
+      totalTasks: 0,
+      completedTasks: 0,
+      activeThreads: 0,
+      maxThreads: this.state.maxThreads,
+      queue: [],
+      currentlyChecking: [],
+      userId: null,
+      liveCount: 0,
+      missingCount: 0,
+      errorCount: 0,
+    };
+
+    this.addLog("Queue reset successfully");
+    return { success: true, message: "Queue reset successfully" };
+  }
+
+  /**
+   * Get recent results (for SSE)
+   */
+  getRecentResults(userId: string) {
+    // In the new architecture, results are emitted via events
+    // This is kept for compatibility
+    return [];
+  }
+
+  /**
+   * Wait for completion (for batch processing)
    */
   async waitForCompletion(userId: string, timeoutMs: number = 300000): Promise<boolean> {
     const startTime = Date.now();
-    const queue = this.queues.get(userId);
-
-    if (!queue) {
-      return true; // No queue means nothing to wait for
-    }
-
-    console.log(`⏳ Waiting for queue completion (userId: ${userId}, timeout: ${timeoutMs}ms)...`);
 
     return new Promise((resolve) => {
       const checkInterval = setInterval(() => {
-        const queue = this.queues.get(userId);
-
-        // Check if queue is empty or stopped or timeout
-        if (!queue || queue.isEmpty() || queue.getStats().isStopped) {
+        // Check if completed or stopped or timeout
+        if (!this.state.isChecking || this.state.activeThreads === 0) {
           clearInterval(checkInterval);
           console.log(`✅ Queue completed for user ${userId}`);
           resolve(true);
@@ -356,46 +364,27 @@ class AutomationService {
           resolve(false);
           return;
         }
-      }, 500); // Check every 500ms
+      }, 500);
     });
   }
 
-  /**
-   * Restart browser (useful between batches)
-   */
-  async restartBrowser(): Promise<void> {
-    console.log("♻ Restarting browser to free resources...");
-    await this.checker.close();
-    await this.checker.initialize();
-    console.log("✅ Browser restarted successfully");
-  }
+  // Browser restart not needed - each check uses fresh browser
 
-  // ... helper DB update methods (unchanged) ...
+  /**
+   * Update review result in database
+   */
   private async updateReviewResult(result: CheckResult): Promise<void> {
     try {
-      // First, fetch existing review to check if liveById is already set
-      const existing = await prisma.review.findUnique({
-        where: { id: result.reviewId },
-        select: { liveById: true },
-      });
-
       const updateData: any = {
         lastCheckedAt: result.checkedAt,
         checkStatus: result.status,
         screenshotPath: result.screenshotPath || null,
       };
 
-      // If review is found LIVE by checker, update main status to LIVE
       if (result.status === "LIVE") {
         updateData.status = "LIVE";
-        // Also set completedAt so it counts towards daily progress
         updateData.completedAt = new Date();
-
-        // First LIVE Attribution: Only set liveById if not already set
-        // Note: For automation, we don't have a userId context, so we skip liveById here
-        // The manual status change in API will handle liveById attribution
       } else if (result.status === "MISSING") {
-        // If checker says missing, update main status to MISSING
         updateData.status = "MISSING";
       }
 
@@ -405,17 +394,6 @@ class AutomationService {
       });
     } catch (error) {
       console.error(`❌ DB UPDATE FAILED for ${result.reviewId}:`, error);
-    }
-  }
-
-  private async updateCheckStatus(reviewId: string, status: string): Promise<void> {
-    try {
-      await prisma.review.update({
-        where: { id: reviewId },
-        data: { checkStatus: status },
-      });
-    } catch (error) {
-      console.error(`❌ Failed to update status for ${reviewId}:`, error);
     }
   }
 }
