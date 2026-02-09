@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CheckCircle2, Loader2, Activity, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +59,13 @@ export function LiveCheckButton({
     stop,
   } = useBatchCheck();
 
+  // Auto-show batch dialog when processing (handles refresh case)
+  useEffect(() => {
+    if (isProcessing && !showBatchDialog) {
+      setShowBatchDialog(true);
+    }
+  }, [isProcessing]);
+
   const startCheck = async (reviewIds: string[]) => {
     if (reviewIds.length === 0) {
       toast.error("No reviews to check");
@@ -86,7 +93,11 @@ export function LiveCheckButton({
         concurrency,
         delayBetweenBatches: 500,
         onComplete: (finalStats) => {
-          setShowBatchDialog(false);
+          // Auto-close dialog after 2 seconds to show completion
+          setTimeout(() => {
+            setShowBatchDialog(false);
+          }, 2000);
+
           if (onCheckComplete) {
             onCheckComplete();
           }

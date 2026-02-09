@@ -22,6 +22,7 @@ import {
     Mail,
     Calendar,
     Pencil,
+    Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -718,25 +719,38 @@ export default function CheckerPage() {
                 </div>
             )}
 
-            {/* Select All Header */}
-            <div className="flex items-center gap-3 mb-3 px-1">
-                <Checkbox
-                    checked={allPageSelected}
-                    onCheckedChange={selectAllOnPage}
-                    className="border-slate-500"
-                />
-                <span className="text-sm text-slate-400">
-                    {allPageSelected ? "Deselect all on page" : "Select all on page"}
-                </span>
-                {meta && (
-                    <span className="text-sm text-slate-500 ml-auto">
-                        {meta.total} total reviews
+            {/* Select All Header - Hidden during batch processing */}
+            {!isBatchProcessing && (
+                <div className="flex items-center gap-3 mb-3 px-1">
+                    <Checkbox
+                        checked={allPageSelected}
+                        onCheckedChange={selectAllOnPage}
+                        className="border-slate-500"
+                    />
+                    <span className="text-sm text-slate-400">
+                        {allPageSelected ? "Deselect all on page" : "Select all on page"}
                     </span>
-                )}
-            </div>
+                    {meta && (
+                        <span className="text-sm text-slate-500 ml-auto">
+                            {meta.total} total reviews
+                        </span>
+                    )}
+                </div>
+            )}
 
             {/* Reviews List - PROFILE PAGE STYLE */}
-            {isLoading ? (
+            {/* OPTIMIZATION: Hide review list during batch processing to save RAM */}
+            {isBatchProcessing ? (
+                <Card className="bg-slate-800/30 border-slate-700">
+                    <CardContent className="py-12 text-center">
+                        <Package className="mx-auto h-10 w-10 text-emerald-400 mb-3 animate-pulse" />
+                        <p className="text-slate-300 font-medium mb-2">Batch Processing in Progress</p>
+                        <p className="text-slate-500 text-sm">
+                            Review list is hidden to save memory. Check the batch progress popup for details.
+                        </p>
+                    </CardContent>
+                </Card>
+            ) : isLoading ? (
                 <div className="text-center py-12 text-slate-500">
                     <Loader2 className="mx-auto h-8 w-8 animate-spin mb-3" />
                     Loading reviews...
@@ -950,14 +964,17 @@ export default function CheckerPage() {
             )}
 
             {/* Live Check Progress Panel */}
-            <LiveCheckProgress
-                stats={stats}
-                status={checkStatus}
-                isOpen={isProgressOpen}
-                onToggle={setProgressOpen}
-                onStop={stopChecks}
-                onReset={reset}
-            />
+            {/* Only show LiveCheckProgress for small batch checks (not batch processing) */}
+            {!isBatchProcessing && (
+                <LiveCheckProgress
+                    stats={stats}
+                    status={checkStatus}
+                    isOpen={isProgressOpen}
+                    onToggle={setProgressOpen}
+                    onStop={stopChecks}
+                    onReset={reset}
+                />
+            )}
 
             {/* Batch Processing Progress (for large batches >200) */}
             {isBatchProcessing && (

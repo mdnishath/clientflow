@@ -4,7 +4,7 @@
  * Handles 1000+ reviews by splitting into batches and processing sequentially
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppDispatch } from '@/lib/hooks';
 import { startCheckingReviews, updateCheckStatus } from '@/lib/features/reviewsSlice';
 import { toast } from 'sonner';
@@ -34,6 +34,8 @@ interface BatchCheckOptions {
   onComplete?: (stats: BatchStats) => void;
 }
 
+const BATCH_STATE_KEY = 'batchCheckState';
+
 export function useBatchCheck() {
   const dispatch = useAppDispatch();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -54,6 +56,101 @@ export function useBatchCheck() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isPausedRef = useRef(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Restore batch state on mount (for refresh support)
+  useEffect(() => {
+    const savedState = localStorage.getItem(BATCH_STATE_KEY);
+    if (savedState) {
+      try {
+        const state = JSON.parse(savedState);
+        if (state.isProcessing) {
+          console.log('🔄 Restoring batch processing state after refresh');
+          setIsProcessing(state.isProcessing);
+          setProgress(state.progress);
+          setStats(state.stats);
+          // Reconnect to SSE
+          reconnectToSSE();
+        }
+      } catch (error) {
+        console.error('Error restoring batch state:', error);
+        localStorage.removeItem(BATCH_STATE_KEY);
+      }
+    }
+  }, []);
+
+  // Save batch state to localStorage
+  const saveBatchState = useCallback(() => {
+    localStorage.setItem(BATCH_STATE_KEY, JSON.stringify({
+      isProcessing,
+      progress,
+      stats,
+    }));
+  }, [isProcessing, progress, stats]);
+
+  // Clear batch state
+  const clearBatchState = useCallback(() => {
+    localStorage.removeItem(BATCH_STATE_KEY);
+  }, []);
+
+  // Reconnect to SSE after refresh
+  const reconnectToSSE = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    const eventSource = new EventSource('/api/automation/sse');
+    eventSourceRef.current = eventSource;
+
+    eventSource.addEventListener('result', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Update stats
+        setStats(prev => {
+          const newStats = { ...prev };
+          if (data.status === 'LIVE') newStats.live++;
+          else if (data.status === 'MISSING') newStats.missing++;
+          else if (data.status === 'ERROR') newStats.error++;
+          return newStats;
+        });
+
+        // Update progress
+        setProgress(prev => ({
+          ...prev,
+          processedReviews: prev.processedReviews + 1,
+          overallProgress: Math.round(((prev.processedReviews + 1) / prev.totalReviews) * 100),
+        }));
+      } catch (error) {
+        console.error('Error parsing SSE result:', error);
+      }
+    });
+
+    eventSource.addEventListener('stats', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.stats.completed >= progress.totalReviews || data.stats.pending + data.stats.processing === 0) {
+          eventSource.close();
+          setIsProcessing(false);
+          clearBatchState();
+        }
+      } catch (error) {
+        console.error('Error parsing SSE stats:', error);
+      }
+    });
+
+    eventSource.onerror = () => {
+      console.error('SSE connection error');
+      eventSource.close();
+    };
+  }, [progress.totalReviews, clearBatchState]);
+
+  // Save state whenever it changes
+  useEffect(() => {
+    if (isProcessing) {
+      saveBatchState();
+    }
+  }, [isProcessing, progress, stats, saveBatchState]);
 
   /**
    * Start batch processing
@@ -186,9 +283,10 @@ export function useBatchCheck() {
         toast.error('Error during batch processing');
       } finally {
         setIsProcessing(false);
+        clearBatchState(); // Clear localStorage after completion
       }
     },
-    [dispatch]
+    [dispatch, clearBatchState]
   );
 
   /**
@@ -379,13 +477,47 @@ export function useBatchCheck() {
   /**
    * Stop batch processing
    */
-  const stop = useCallback(() => {
-    abortControllerRef.current?.abort();
-    isPausedRef.current = false;
-    setProgress(prev => ({ ...prev, status: 'idle' }));
-    setIsProcessing(false);
-    toast.warning('Batch processing stopped');
-  }, []);
+  const stop = useCallback(async () => {
+    try {
+      // Call API to stop server-side automation
+      const response = await fetch('/api/automation/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        console.error('Failed to stop automation on server');
+      }
+
+      // Close SSE connection
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+
+      // Abort client-side loop
+      abortControllerRef.current?.abort();
+      isPausedRef.current = false;
+
+      // Clear state
+      setProgress({
+        currentBatch: 0,
+        totalBatches: 0,
+        currentBatchProgress: 0,
+        overallProgress: 0,
+        processedReviews: 0,
+        totalReviews: 0,
+        status: 'idle',
+      });
+      setIsProcessing(false);
+      clearBatchState();
+
+      toast.warning('Batch processing stopped');
+    } catch (error) {
+      console.error('Error stopping batch:', error);
+      toast.error('Failed to stop batch processing');
+    }
+  }, [clearBatchState]);
 
   return {
     isProcessing,
