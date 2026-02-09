@@ -96,7 +96,7 @@ function ReviewActionButtons({
     lockedBy,
     onAction
 }: ReviewActionButtonsProps) {
-    const showReviewActions = (status === "LIVE" || status === "DONE" || status === "APPLIED") && reviewLiveLink;
+    const showReviewActions = (status === "LIVE" || status === "DONE" || status === "APPLIED" || status === "MISSING") && reviewLiveLink;
 
     const handleAction = (cb: () => void) => {
         if (isLocked) {
