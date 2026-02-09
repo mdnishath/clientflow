@@ -163,6 +163,10 @@ export function useLiveCheck(onComplete?: () => void) {
 
             eventSource.addEventListener("system-complete", () => {
                 console.log("🏁 System reported completion");
+                setStatus("COMPLETE");
+                hasCompletedRef.current = true;
+                toast.success("Checks complete!");
+                onComplete?.();
             });
         };
 

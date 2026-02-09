@@ -205,9 +205,9 @@ export async function GET(request: NextRequest) {
                 let scheduledFor = null;
 
                 // Identify if this review counts against the "Pending Quota"
-                // It counts if it is NOT Done/Live (e.g. Pending, In_Progress, Missing)
-                // AND it is not archived.
-                const isPendingType = review.status !== "DONE" && review.status !== "LIVE" && !review.isArchived;
+                // It counts if it is strictly a "To Be Posted" status
+                // Statuses like MISSING or GOOGLE_ISSUE should NOT be hidden/scheduled
+                const isPendingType = (review.status === "PENDING" || review.status === "IN_PROGRESS" || review.status === "APPLIED") && !review.isArchived;
 
                 if (isPendingType) {
                     if (quotaUsed < remainingQuota) {

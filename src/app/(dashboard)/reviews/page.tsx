@@ -219,9 +219,43 @@ export default function ReviewsPage() {
 
     // Client-side filtering to ensure real-time updates respect the current view
     // MOVED here to avoid ReferenceError (must be after state init)
+    // Client-side filtering to ensure real-time updates respect the current view
+    // MOVED here to avoid ReferenceError (must be after state init)
     const reviews = allReviews.filter(r => {
-        if (statusFilter === "all") return true;
-        return r.status === statusFilter;
+        // Status Filter
+        if (statusFilter !== "all" && r.status !== statusFilter) return false;
+
+        // Client Filter
+        if (clientFilter !== "all") {
+            // Use type assertion or optional chaining if property exists on runtime object
+            const p = r.profile as any;
+            if (p?.clientId !== clientFilter) return false;
+        }
+
+        // Category Filter
+        if (categoryFilter !== "all" && r.profile?.category !== categoryFilter) return false;
+
+        // Profile Filter
+        if (profileFilter !== "all" && r.profile?.id !== profileFilter) return false;
+
+        // Due Date Filter (Today)
+        if (dueDateFilter === "today") {
+            const today = new Date().toISOString().split('T')[0];
+            const due = r.dueDate ? new Date(r.dueDate).toISOString().split('T')[0] : null;
+            // logic: if filter is today, show Overdue OR Due Today
+            if (!due || due > today) return false;
+        }
+
+        // Search (Basic client-side fallback)
+        if (search) {
+            const lowerSearch = search.toLowerCase();
+            const textMatch = r.reviewText?.toLowerCase().includes(lowerSearch);
+            const businessMatch = r.profile?.businessName?.toLowerCase().includes(lowerSearch);
+            const notesMatch = r.notes?.toLowerCase().includes(lowerSearch);
+            if (!textMatch && !businessMatch && !notesMatch) return false;
+        }
+
+        return true;
     });
 
     const isLoading = loading === "pending";
@@ -711,6 +745,11 @@ export default function ReviewsPage() {
                         <SelectItem value="all">All Status</SelectItem>
                         <SelectItem value="PENDING">Pending</SelectItem>
                         <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                        <SelectItem value="MISSING">Missing</SelectItem>
+                        <SelectItem value="APPLIED">Applied</SelectItem>
+                        <SelectItem value="GOOGLE_ISSUE">Google Issue</SelectItem>
+                        <SelectItem value="LIVE">Live</SelectItem>
+                        <SelectItem value="DONE">Done</SelectItem>
                     </SelectContent>
                 </Select>
                 <Button

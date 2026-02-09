@@ -234,14 +234,26 @@ export default function CheckerPage() {
         if (checkStatusFilter !== "all" && r.checkStatus !== checkStatusFilter) {
             return false;
         }
+
+        // Profile Filter (Fix: Explicit client-side filtering)
+        if (profileFilter !== "all" && r.profile.id !== profileFilter) {
+            return false;
+        }
+
         return true;
     });
 
     // Fetch profiles for filter dropdown
     useEffect(() => {
-        fetch("/api/profiles?limit=500")
+        fetch("/api/profiles?limit=2000")
             .then(res => res.json())
-            .then(data => setProfiles(data.profiles || []))
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setProfiles(data);
+                } else {
+                    setProfiles(data.profiles || []);
+                }
+            })
             .catch(() => { });
     }, []);
 

@@ -154,51 +154,47 @@ class AutomationService {
       return false;
     };
 
-    while (hasWork()) {
-      let didWork = false;
+    try {
+      while (hasWork()) {
+        let didWork = false;
 
-      // Round-robin through all active user queues
-      for (const [userId, queue] of this.queues.entries()) {
-        const job = queue.getNext();
+        // Round-robin through all active user queues
+        for (const [userId, queue] of this.queues.entries()) {
+          const job = queue.getNext();
 
-        if (job) {
-          didWork = true;
-          console.log(`📋 Processing job for user ${userId}: ${job.reviewId}`);
+          if (job) {
+            didWork = true;
+            console.log(`📋 Processing job for user ${userId}: ${job.reviewId}`);
 
-          // Emit stats update (Now processing)
-          automationEvents.emit("stats", {
-            userId,
-            stats: queue.getStats()
-          });
+            // Emit stats update (Now processing)
+            automationEvents.emit("stats", {
+              userId,
+              stats: queue.getStats()
+            });
 
-          // Process job
-          // We limit global concurrency here implicitly by how fast we loop?
-          // No, synchronous loop spins fast. 
-          // Actually, `queue.getNext()` respects PER-QUEUE concurrency.
-          // But we might want GLOBAL concurrency too (e.g. max 5 browsers total).
-          // For now, let's assume per-user limits are fine, but we serialize the *browser* ops to avoid crashes?
-          // The `processJob` IS async but we don't await it here to allow parallelism.
+            this.processJob(job, queue, userId).catch((error) => {
+              console.error(`❌ Error processing job ${job.reviewId}:`, error);
+              queue.complete(job.reviewId, "ERROR");
+            });
 
-          this.processJob(job, queue, userId).catch((error) => {
-            console.error(`❌ Error processing job ${job.reviewId}:`, error);
-            queue.complete(job.reviewId, "ERROR");
-          });
+            // Small delay between assigning jobs to different users
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        }
 
-          // Small delay between assigning jobs to different users
-          await new Promise((resolve) => setTimeout(resolve, 100));
+        if (!didWork) {
+          // Wait a bit if no queues had ready jobs (stats valid but maybe max concurrency reached)
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
       }
-
-      if (!didWork) {
-        // Wait a bit if no queues had ready jobs (stats valid but maybe max concurrency reached)
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
+    } catch (error) {
+      console.error("FATAL: Queue processor crashed:", error);
+    } finally {
+      console.log("✅ All queues empty, processor stopping");
+      automationEvents.emit("complete", { timestamp: new Date().toISOString() });
+      await this.checker.close();
+      this.isProcessing = false;
     }
-
-    console.log("✅ All queues empty, processor stopping");
-    automationEvents.emit("complete", { timestamp: new Date().toISOString() });
-    await this.checker.close();
-    this.isProcessing = false;
   }
 
   private async processJob(job: QueueJob, queue: AutomationQueue, userId: string): Promise<void> {

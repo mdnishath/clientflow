@@ -131,9 +131,11 @@ export class LiveChecker {
       // Handle cookie consent (if present)
       await this.handleCookieConsent(page);
 
+      // Extract ID from link for strict matching
+      const expectedId = this.extractReviewIdFromLink(review.reviewLiveLink);
+
       // Check if review is live
-      // Check if review is live
-      const isLive = await this.verifyReviewPresence(page, review.reviewText);
+      const isLive = await this.verifyReviewPresence(page, review.reviewText, expectedId);
 
       if (isLive) {
         // Screenshots disabled per user request to improve performance
@@ -213,10 +215,27 @@ export class LiveChecker {
   }
 
   /**
+   * Helper: Extract Google Review ID from URL or Link
+   * Handles common formats where ID is after !1s or data-review-id pattern
+   */
+  private extractReviewIdFromLink(link: string): string | null {
+    try {
+      // Common pattern: !1s<ID>
+      const match = link.match(/!1s([^!]+)/);
+      if (match && match[1]) {
+        return match[1];
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
    * Verify if the review is present on the page
    * STRICT MODE: Only accept specific "Like" or "Share" buttons with data-review-id
    */
-  private async verifyReviewPresence(page: Page, reviewText?: string | null): Promise<boolean> {
+  private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
       // Wait a bit for Google Maps to fully load
       await page.waitForTimeout(3000);
@@ -235,11 +254,16 @@ export class LiveChecker {
         return false;
       }
 
-      // STRICT CHECK: Only look for the specific button class provided by user
-      // Selector: button.gllhef[data-review-id]
-      const actionButton = page.locator('button.gllhef[data-review-id]').first();
+      // STRICT CHECK: Matches specific ID if available, otherwise just the class
+      let selector = 'button.gllhef[data-review-id]';
+      if (expectedId) {
+        console.log(`🎯 Looking for specific Review ID: ${expectedId}`);
+        selector = `button.gllhef[data-review-id="${expectedId}"]`;
+      }
+
+      const actionButton = page.locator(selector).first();
       if (await actionButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-        console.log("✓ Found review via strict button.gllhef[data-review-id]");
+        console.log(`✓ Found review via strict selector: ${selector}`);
         return true;
       }
 
