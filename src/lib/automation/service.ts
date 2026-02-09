@@ -244,13 +244,25 @@ class AutomationService {
   // ... helper DB update methods (unchanged) ...
   private async updateReviewResult(result: CheckResult): Promise<void> {
     try {
+      const updateData: any = {
+        lastCheckedAt: result.checkedAt,
+        checkStatus: result.status,
+        screenshotPath: result.screenshotPath || null,
+      };
+
+      // If review is found LIVE by checker, update main status to LIVE
+      if (result.status === "LIVE") {
+        updateData.status = "LIVE";
+        // Also set completedAt so it counts towards daily progress
+        updateData.completedAt = new Date();
+      } else if (result.status === "MISSING") {
+        // If checker says missing, update main status to MISSING
+        updateData.status = "MISSING";
+      }
+
       await prisma.review.update({
         where: { id: result.reviewId },
-        data: {
-          lastCheckedAt: result.checkedAt,
-          checkStatus: result.status,
-          screenshotPath: result.screenshotPath || null,
-        },
+        data: updateData,
       });
     } catch (error) {
       console.error(`❌ DB UPDATE FAILED for ${result.reviewId}:`, error);
