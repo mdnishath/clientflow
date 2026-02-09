@@ -53,27 +53,44 @@ export function useLiveCheck(onComplete?: () => void) {
     }, [status]);
 
     // Initial Status Check (Sync state on mount)
-    useEffect(() => {
-        const fetchInitialStatus = async () => {
-            try {
-                const res = await fetch("/api/automation/status");
-                const data = await res.json();
-                if (data.success && data.stats) {
-                    setStats(data.stats);
-                    const isActive = data.stats.processing > 0 || data.stats.pending > 0;
-                    if (isActive) {
+    const fetchStatus = useCallback(async () => {
+        try {
+            const res = await fetch("/api/automation/status");
+            const data = await res.json();
+            if (data.success && data.stats) {
+                setStats(data.stats);
+                const isActive = data.stats.processing > 0 || data.stats.pending > 0;
+
+                // Only update status if meaningful change (avoid jitter)
+                if (isActive) {
+                    if (statusRef.current !== "RUNNING") {
                         setStatus("RUNNING");
-                        statusRef.current = "RUNNING";
                         setIsOpen(true);
                     }
+                } else if (data.stats.total > 0 && data.stats.pending === 0 && data.stats.processing === 0) {
+                    // Check if we just finished
+                    if (statusRef.current === "RUNNING") {
+                        setStatus("COMPLETE");
+                        hasCompletedRef.current = true;
+                    }
                 }
-            } catch (error) {
-                console.error("Initial status check failed:", error);
             }
-        };
-
-        fetchInitialStatus();
+        } catch (error) {
+            console.error("Status check failed:", error);
+        }
     }, []);
+
+    useEffect(() => {
+        fetchStatus();
+    }, [fetchStatus]);
+
+    // POLLING FALLBACK: For production environments where SSE might be buffered or multi-process
+    useEffect(() => {
+        if (status === "RUNNING" || status === "STARTING") {
+            const interval = setInterval(fetchStatus, 2000); // Poll every 2s
+            return () => clearInterval(interval);
+        }
+    }, [status, fetchStatus]);
 
     // SSE Connection Effect
     useEffect(() => {
