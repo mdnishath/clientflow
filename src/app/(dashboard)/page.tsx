@@ -10,6 +10,8 @@ import {
     Store,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AutoFillButton } from "@/components/dashboard/auto-fill-button";
+import { DeletePendingButton } from "@/components/dashboard/delete-pending-button";
 import Link from "next/link";
 
 interface ReviewWithProfile {
@@ -272,6 +274,12 @@ export default async function DashboardPage() {
                         Welcome back, {session.user.name || "there"}
                     </p>
                 </div>
+                {data.isAdmin && (
+                    <div className="flex gap-3">
+                        <DeletePendingButton />
+                        <AutoFillButton />
+                    </div>
+                )}
             </div>
 
             {/* Stats Grid */}
