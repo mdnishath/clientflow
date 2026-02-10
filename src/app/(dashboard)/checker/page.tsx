@@ -38,7 +38,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { PaginationControls } from "@/components/ui/pagination-controls";
 import { CheckStatusBadge } from "@/components/reviews/check-status-badge";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useBatchCheck } from "@/hooks/use-batch-check";
@@ -191,16 +190,14 @@ export default function CheckerPage() {
     // Read checkStatus from URL if coming from dashboard
     const urlCheckStatus = searchParams.get("checkStatus");
 
-    const [page, setPage] = useState(1);
-    const [loadMode, setLoadMode] = useState<"paginated" | "all">("paginated");
+    // LAZY LOAD: Load 20 reviews at a time
+    const [displayedCount, setDisplayedCount] = useState(20);
     const [statusFilter, setStatusFilter] = useState("not-PENDING");
     const [checkStatusFilter, setCheckStatusFilter] = useState(urlCheckStatus || "all");
     const [profileFilter, setProfileFilter] = useState("all");
     const [profiles, setProfiles] = useState<{ id: string; businessName: string }[]>([]);
     const [search, setSearch] = useState("");
     // PERFORMANCE: Debounce search to reduce API calls by 90%
-    // User types "hello" = 5 keystrokes
-    // Before: 5 API calls | After: 1 API call (300ms after last keystroke)
     const [debouncedSearch] = useDebounce(search, 300);
     const [showArchived, setShowArchived] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -238,7 +235,7 @@ export default function CheckerPage() {
 
     // Client-side filtering to ensure real-time updates respect the current view
     // MOVED here to avoid ReferenceError (must be after state init)
-    const reviews = allReviews.filter(r => {
+    const allFilteredReviews = allReviews.filter(r => {
         // Status Filter
         if (statusFilter !== "all") {
             if (statusFilter === "not-PENDING") {
@@ -260,6 +257,17 @@ export default function CheckerPage() {
         return true;
     });
 
+    // LAZY LOAD: Only display first N reviews
+    const displayedReviews = allFilteredReviews.slice(0, displayedCount);
+
+    // Load More function
+    const loadMore = () => {
+        setDisplayedCount(prev => Math.min(prev + 20, allFilteredReviews.length));
+    };
+
+    // Check if we have more reviews to load
+    const hasMore = displayedCount < allFilteredReviews.length;
+
     // Fetch profiles for filter dropdown
     useEffect(() => {
         fetch("/api/profiles?limit=2000")
@@ -274,41 +282,35 @@ export default function CheckerPage() {
             .catch(() => { });
     }, []);
 
-    // Fetch reviews
+    // Fetch ALL reviews (no pagination) - lazy load on frontend
     const fetchReviewsData = useCallback(async () => {
         const params: {
-            page: number;
-            limit: number;
+            page?: number;
+            limit?: number;
             status?: string;
             checkStatus?: string;
             search?: string;
             isArchived?: boolean;
             profileId?: string;
         } = {
-            page: loadMode === "all" ? 1 : page,
-            // OPTIMIZATION: Increased limit for "all" mode from 1000 to 2000 for better UX
-            // But we'll use virtualization to render only visible items
-            limit: loadMode === "all" ? 2000 : 20
+            // Fetch all reviews (no pagination limit)
+            page: 1,
+            limit: 5000, // High limit to get all reviews
         };
 
         if (statusFilter !== "all") params.status = statusFilter;
         if (checkStatusFilter !== "all") params.checkStatus = checkStatusFilter;
         if (profileFilter !== "all") params.profileId = profileFilter;
-        // PERFORMANCE: Use debounced search instead of immediate search
         if (debouncedSearch) params.search = debouncedSearch;
         if (showArchived) params.isArchived = true;
 
         await dispatch(fetchReviews(params));
-    }, [dispatch, page, loadMode, statusFilter, checkStatusFilter, profileFilter, debouncedSearch, showArchived]);
+    }, [dispatch, statusFilter, checkStatusFilter, profileFilter, debouncedSearch, showArchived]);
 
-    // Clear selection when page OR filters change
+    // Clear selection and reset displayed count when filters change
     useEffect(() => {
         setSelectedIds([]);
-    }, [page, statusFilter, checkStatusFilter, profileFilter, debouncedSearch, showArchived]);
-
-    // Reset page when filters change (use debounced search to avoid too many resets)
-    useEffect(() => {
-        setPage(1);
+        setDisplayedCount(20); // Reset to show first 20
     }, [statusFilter, checkStatusFilter, profileFilter, debouncedSearch, showArchived]);
 
     useEffect(() => {
@@ -318,7 +320,7 @@ export default function CheckerPage() {
     // Optimistic status change with filter-aware removal
     // When status changes and new status doesn't match current filter, item smoothly disappears
     const handleStatusChange = async (reviewId: string, newStatus: string) => {
-        const review = reviews.find((r) => r.id === reviewId);
+        const review = allFilteredReviews.find((r) => r.id === reviewId);
         if (!review) return;
 
         const oldStatus = review.status;
@@ -367,13 +369,14 @@ export default function CheckerPage() {
         );
     };
 
-    const selectAllOnPage = () => {
-        const pageIds = reviews.map((r) => r.id);
-        const allSelected = pageIds.every((id) => selectedIds.includes(id));
+    // Select/Deselect all displayed reviews
+    const selectAllDisplayed = () => {
+        const displayedIds = displayedReviews.map((r) => r.id);
+        const allSelected = displayedIds.every((id) => selectedIds.includes(id));
         if (allSelected) {
-            setSelectedIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+            setSelectedIds((prev) => prev.filter((id) => !displayedIds.includes(id)));
         } else {
-            setSelectedIds((prev) => [...new Set([...prev, ...pageIds])]);
+            setSelectedIds((prev) => [...new Set([...prev, ...displayedIds])]);
         }
     };
 
@@ -441,7 +444,14 @@ export default function CheckerPage() {
     };
 
     const handleCheckAll = async () => {
-        const allIds = reviews.map((r) => r.id);
+        // Check ALL reviews that have reviewLiveLink (not just displayed)
+        // Exclude PENDING and IN_PROGRESS status
+        const checkableReviews = allFilteredReviews.filter(r =>
+            r.reviewLiveLink &&
+            r.status !== "PENDING" &&
+            r.status !== "IN_PROGRESS"
+        );
+        const allIds = checkableReviews.map((r) => r.id);
         setSelectedIds(allIds);
 
         toast.success(`Checking ${allIds.length} reviews with ${threadCount} threads...`);
@@ -459,7 +469,7 @@ export default function CheckerPage() {
         setIsFormOpen(true);
     };
 
-    const allPageSelected = reviews.length > 0 && reviews.every((r) => selectedIds.includes(r.id));
+    const allDisplayedSelected = displayedReviews.length > 0 && displayedReviews.every((r) => selectedIds.includes(r.id));
 
     return (
         <div className="p-6 lg:p-8 pt-16 lg:pt-8">
@@ -494,7 +504,7 @@ export default function CheckerPage() {
                     )}
                     <Button
                         onClick={handleCheckAll}
-                        disabled={isChecking || reviews.length === 0}
+                        disabled={isChecking || allFilteredReviews.length === 0}
                         variant="outline"
                         className="border-indigo-500 text-indigo-400 hover:bg-indigo-500/10"
                     >
@@ -606,17 +616,6 @@ export default function CheckerPage() {
                 </div>
 
                 <Button
-                    variant={loadMode === "all" ? "default" : "outline"}
-                    onClick={() => {
-                        setLoadMode(loadMode === "paginated" ? "all" : "paginated");
-                        setPage(1);
-                    }}
-                    className={`col-span-1 md:w-auto ${loadMode === "all" ? "bg-indigo-600 hover:bg-indigo-700" : "border-slate-700 text-slate-300"}`}
-                >
-                    {loadMode === "all" ? "Showing All" : "Load All"}
-                </Button>
-
-                <Button
                     variant={showArchived ? "default" : "outline"}
                     onClick={() => setShowArchived(!showArchived)}
                     className={`col-span-1 md:w-auto ${showArchived ? "bg-amber-600 hover:bg-amber-700" : "border-slate-700 text-slate-300"}`}
@@ -711,18 +710,16 @@ export default function CheckerPage() {
             {!isChecking && (
                 <div className="flex items-center gap-3 mb-3 px-1">
                     <Checkbox
-                        checked={allPageSelected}
-                        onCheckedChange={selectAllOnPage}
+                        checked={allDisplayedSelected}
+                        onCheckedChange={selectAllDisplayed}
                         className="border-slate-500"
                     />
                     <span className="text-sm text-slate-400">
-                        {allPageSelected ? "Deselect all on page" : "Select all on page"}
+                        {allDisplayedSelected ? "Deselect all displayed" : "Select all displayed"}
                     </span>
-                    {meta && (
-                        <span className="text-sm text-slate-500 ml-auto">
-                            {meta.total} total reviews
-                        </span>
-                    )}
+                    <span className="text-sm text-slate-500 ml-auto">
+                        Showing {displayedReviews.length} of {allFilteredReviews.length} reviews
+                    </span>
                 </div>
             )}
 
@@ -743,19 +740,19 @@ export default function CheckerPage() {
                     <Loader2 className="mx-auto h-8 w-8 animate-spin mb-3" />
                     Loading reviews...
                 </div>
-            ) : reviews.length === 0 ? (
+            ) : displayedReviews.length === 0 ? (
                 <Card className="bg-slate-800/30 border-slate-700">
                     <CardContent className="py-12 text-center">
                         <Activity className="mx-auto h-10 w-10 text-slate-600 mb-3" />
                         <p className="text-slate-400 font-medium">No reviews found</p>
                     </CardContent>
                 </Card>
-            ) : loadMode === "all" && reviews.length > 50 ? (
+            ) : displayedReviews.length > 50 ? (
                 // OPTIMIZATION: Use virtual scrolling for large lists (>50 items)
                 // This renders only visible items, reducing DOM nodes from 1000+ to ~20
                 // Fixes 95% RAM usage issue
                 <VirtualizedReviewList
-                    reviews={reviews}
+                    reviews={displayedReviews}
                     itemHeight={150}
                     renderItem={(review) => {
                         const isSelected = selectedIds.includes(review.id);
@@ -943,9 +940,9 @@ export default function CheckerPage() {
                     }}
                 />
             ) : (
-                // Regular rendering for small lists (<= 50 items)
+                // LAZY LOAD: Render only displayed reviews
                 <div className="space-y-3">
-                    {reviews.map((review) => {
+                    {displayedReviews.map((review) => {
                         const isSelected = selectedIds.includes(review.id);
                         const isLiveOrDone = review.status === "LIVE" || review.status === "DONE";
 
@@ -1132,15 +1129,26 @@ export default function CheckerPage() {
                 </div>
             )}
 
-            {/* Pagination */}
-            {meta && meta.totalPages > 1 && loadMode === "paginated" && (
-                <div className="mt-6">
-                    <PaginationControls
-                        currentPage={page}
-                        totalPages={meta.totalPages}
-                        onPageChange={setPage}
-                        isLoading={isLoading}
-                    />
+            {/* Load More Button */}
+            {hasMore && !isChecking && (
+                <div className="mt-6 flex justify-center">
+                    <Button
+                        onClick={loadMore}
+                        variant="outline"
+                        className="border-indigo-500 text-indigo-400 hover:bg-indigo-500/10"
+                        disabled={isLoading}
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 size={16} className="mr-2 animate-spin" />
+                                Loading...
+                            </>
+                        ) : (
+                            <>
+                                Load More ({allFilteredReviews.length - displayedCount} remaining)
+                            </>
+                        )}
+                    </Button>
                 </div>
             )}
 
