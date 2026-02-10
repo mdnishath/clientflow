@@ -415,17 +415,33 @@ export function useBatchCheck() {
       eventSource.addEventListener('stats', (event) => {
         try {
           const data = JSON.parse(event.data);
-          // Check if batch is complete
-          if (data.stats.completed >= reviewIds.length) {
+          // Check if batch is complete (queue empty AND no active threads)
+          const isComplete = data.stats.completed >= reviewIds.length ||
+              (data.stats.pending === 0 && data.stats.processing === 0 && processedCount > 0);
+
+          if (isComplete) {
             // Flush any remaining updates
             if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
             flushUpdates();
             // DON'T close SSE - keep it alive for next batch
-            console.log('✅ Batch complete, keeping SSE connection alive');
+            console.log(`✅ Batch complete (${processedCount}/${reviewIds.length} processed), keeping SSE alive`);
             resolve(batchStats);
           }
         } catch (error) {
           console.error('Error parsing SSE stats:', error);
+        }
+      });
+
+      // Listen for system-complete event (backend finished entire queue)
+      eventSource.addEventListener('system-complete', (event) => {
+        console.log('📢 Backend system-complete event received');
+        // Flush any remaining updates
+        if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
+        flushUpdates();
+        // Resolve immediately when backend says complete
+        if (processedCount > 0) {
+          console.log(`✅ Force completing batch due to system-complete (${processedCount} processed)`);
+          resolve(batchStats);
         }
       });
 
@@ -561,6 +577,43 @@ export function useBatchCheck() {
     }
   }, [clearBatchState]);
 
+  /**
+   * Clear/Reset - clear all state and stats
+   */
+  const clear = useCallback(() => {
+    // Close SSE connection if exists
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
+    // Abort any pending operations
+    abortControllerRef.current?.abort();
+    isPausedRef.current = false;
+
+    // Reset all state
+    setProgress({
+      currentBatch: 0,
+      totalBatches: 0,
+      currentBatchProgress: 0,
+      overallProgress: 0,
+      processedReviews: 0,
+      totalReviews: 0,
+      status: 'idle',
+    });
+
+    setStats({
+      live: 0,
+      missing: 0,
+      error: 0,
+    });
+
+    setIsProcessing(false);
+    clearBatchState();
+
+    toast.success('Progress cleared');
+  }, [clearBatchState]);
+
   return {
     isProcessing,
     progress,
@@ -569,6 +622,7 @@ export function useBatchCheck() {
     pause,
     resume,
     stop,
+    clear, // NEW: Expose clear function
   };
 }
 

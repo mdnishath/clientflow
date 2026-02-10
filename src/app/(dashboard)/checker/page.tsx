@@ -231,12 +231,32 @@ export default function CheckerPage() {
         progress: batchProgress,
         stats: batchStats,
         startBatchCheck,
+        stop: stopBatchCheck,
+        clear: clearBatchCheck,
     } = useBatchCheck();
 
     // Lock Management
     const { isLocked, getLock, acquireLock, releaseLock, currentUser } = useReviewLocks();
 
     const isChecking = checkStatus === "STARTING" || checkStatus === "RUNNING" || isBatchProcessing;
+
+    // Combined stop handler for both regular and batch checking
+    const handleStop = async () => {
+        if (isBatchProcessing) {
+            await stopBatchCheck();
+        }
+        if (checkStatus === "RUNNING" || checkStatus === "STARTING") {
+            await stopChecks();
+        }
+    };
+
+    // Combined reset/clear handler
+    const handleReset = () => {
+        if (isBatchProcessing) {
+            clearBatchCheck();
+        }
+        reset();
+    };
 
     // Client-side filtering to ensure real-time updates respect the current view
     // MOVED here to avoid ReferenceError (must be after state init)
@@ -1231,8 +1251,8 @@ export default function CheckerPage() {
                         status={checkStatus}
                         isOpen={isProgressOpen}
                         onToggle={setProgressOpen}
-                        onStop={stopChecks}
-                        onReset={reset}
+                        onStop={handleStop}
+                        onReset={handleReset}
                     />
                 </Suspense>
             )}
