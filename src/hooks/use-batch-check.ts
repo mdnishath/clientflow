@@ -126,7 +126,8 @@ export function useBatchCheck() {
     };
 
     validateAndRestoreState();
-  }, [getBatchStateKey, session?.user?.id, reconnectToSSE]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getBatchStateKey, session?.user?.id]);
 
   // FIX: Cleanup on unmount to prevent memory leaks
   useEffect(() => {
