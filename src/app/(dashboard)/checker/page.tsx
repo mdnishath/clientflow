@@ -1192,8 +1192,9 @@ export default function CheckerPage() {
             )}
 
             {/* UNIFIED POPUP HANDLING: Show only ONE popup based on processing mode */}
-            {/* If batch processing (>200 reviews), show batch popup */}
-            {/* If regular checking (<=200 reviews), show regular progress popup */}
+            {/* Priority: Batch processing > Regular checking */}
+            {/* If batch processing, show batch popup with all stats */}
+            {/* If regular checking (non-batch), show regular popup */}
             {/* NEVER show both popups simultaneously */}
 
             {isBatchProcessing ? (
@@ -1268,16 +1269,18 @@ export default function CheckerPage() {
                 </div>
             ) : (
                 /* Regular Live Check Progress Panel (for small batches <=200) */
-                <Suspense fallback={<div></div>}>
-                    <LiveCheckProgress
-                        stats={stats}
-                        status={checkStatus}
-                        isOpen={isProgressOpen}
-                        onToggle={setProgressOpen}
-                        onStop={handleStop}
-                        onReset={handleReset}
-                    />
-                </Suspense>
+                !isBatchProcessing && (
+                    <Suspense fallback={<div></div>}>
+                        <LiveCheckProgress
+                            stats={stats}
+                            status={checkStatus}
+                            isOpen={isProgressOpen}
+                            onToggle={setProgressOpen}
+                            onStop={handleStop}
+                            onReset={handleReset}
+                        />
+                    </Suspense>
+                )
             )}
 
             {/* Review Form - Lazy loaded */}

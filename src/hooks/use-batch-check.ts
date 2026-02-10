@@ -220,16 +220,14 @@ export function useBatchCheck() {
   }, [isProcessing, progress, stats, saveBatchState]);
 
   /**
-   * Start batch processing
+   * Start batch processing - SERVERSIDE MANAGED
+   * Send all reviews to backend in single call, backend handles queue/batching
    */
   const startBatchCheck = useCallback(
     async (reviewIds: string[], options: BatchCheckOptions = {}) => {
       const {
-        batchSize = 100,
         concurrency = 5,
-        delayBetweenBatches = 2000,
         onProgress,
-        onBatchComplete,
         onComplete,
       } = options;
 
@@ -238,126 +236,205 @@ export function useBatchCheck() {
       isPausedRef.current = false;
       abortControllerRef.current = new AbortController();
 
-      const batches = createBatches(reviewIds, batchSize);
-      const totalBatches = batches.length;
+      console.log(`📦 Starting serverside batch check: ${reviewIds.length} reviews with ${concurrency} threads`);
 
-      console.log(`📦 Starting batch check: ${reviewIds.length} reviews in ${totalBatches} batches`);
+      // Initialize progress
+      setProgress({
+        currentBatch: 0,
+        totalBatches: 0,
+        currentBatchProgress: 0,
+        overallProgress: 0,
+        processedReviews: 0,
+        totalReviews: reviewIds.length,
+        status: 'running',
+      });
 
-      const accumulatedStats: BatchStats = { live: 0, missing: 0, error: 0 };
+      setStats({ live: 0, missing: 0, error: 0 });
 
       try {
         // Mark all reviews as CHECKING in Redux
         dispatch(startCheckingReviews(reviewIds));
 
-        for (let i = 0; i < batches.length; i++) {
-          // Check if aborted
-          if (abortControllerRef.current?.signal.aborted) {
-            console.log('🛑 Batch check aborted by user');
-            setProgress(prev => ({ ...prev, status: 'idle' }));
-            setIsProcessing(false);
-            return;
-          }
+        // SINGLE API CALL - send all reviews to backend at once
+        const response = await fetch('/api/automation/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reviewIds,
+            concurrency,
+          }),
+        });
 
-          // Wait if paused
-          while (isPausedRef.current && !abortControllerRef.current?.signal.aborted) {
-            await sleep(500);
-          }
-
-          const batchNumber = i + 1;
-          const batch = batches[i];
-
-          console.log(`\n${'='.repeat(80)}\n📦 Processing Batch ${batchNumber}/${totalBatches} (${batch.length} reviews)\n${'='.repeat(80)}`);
-
-          // Update progress
-          const currentProgress: BatchProgress = {
-            currentBatch: batchNumber,
-            totalBatches,
-            currentBatchProgress: 0,
-            overallProgress: Math.round((i / totalBatches) * 100),
-            processedReviews: i * batchSize,
-            totalReviews: reviewIds.length,
-            status: 'running',
-          };
-          setProgress(currentProgress);
-          onProgress?.(currentProgress, accumulatedStats);
-
-          // Process this batch
-          try {
-            const batchStats = await processSingleBatch(
-              batch,
-              concurrency,
-              batchNumber,
-              totalBatches,
-              (batchProgress) => {
-                // Update current batch progress
-                const updatedProgress: BatchProgress = {
-                  ...currentProgress,
-                  currentBatchProgress: batchProgress,
-                  overallProgress: Math.round(
-                    ((i + batchProgress / 100) / totalBatches) * 100
-                  ),
-                  processedReviews: i * batchSize + Math.round((batch.length * batchProgress) / 100),
-                };
-                setProgress(updatedProgress);
-                onProgress?.(updatedProgress, accumulatedStats);
-              }
-            );
-
-            // Accumulate stats
-            accumulatedStats.live += batchStats.live;
-            accumulatedStats.missing += batchStats.missing;
-            accumulatedStats.error += batchStats.error;
-            setStats(accumulatedStats);
-
-            console.log(`✅ Batch ${batchNumber}/${totalBatches} completed: ${batchStats.live} live, ${batchStats.missing} missing, ${batchStats.error} errors`);
-
-            onBatchComplete?.(batchNumber, totalBatches, accumulatedStats);
-
-            // Delay between batches (except last batch)
-            if (i < batches.length - 1 && !abortControllerRef.current?.signal.aborted) {
-              console.log(`⏳ Waiting ${delayBetweenBatches}ms before next batch...`);
-              await sleep(delayBetweenBatches);
-            }
-          } catch (error) {
-            console.error(`❌ Error processing batch ${batchNumber}:`, error);
-            toast.error(`Error in batch ${batchNumber}`);
-            // Continue to next batch instead of failing completely
-          }
+        if (!response.ok) {
+          throw new Error('Failed to start batch check');
         }
 
-        // All batches completed
-        if (!abortControllerRef.current?.signal.aborted) {
-          console.log('\n✅ All batches completed successfully!');
-          console.log(`📊 Final Stats: ${accumulatedStats.live} live, ${accumulatedStats.missing} missing, ${accumulatedStats.error} errors`);
+        console.log(`✅ Backend accepted ${reviewIds.length} reviews, now monitoring via SSE...`);
 
-          setProgress(prev => ({
-            ...prev,
-            currentBatchProgress: 100,
-            overallProgress: 100,
-            processedReviews: reviewIds.length,
-            status: 'completed',
-          }));
+        // Connect to SSE for real-time updates
+        await monitorBatchProgress(reviewIds.length, onProgress, onComplete);
 
-          toast.success(
-            `All ${reviewIds.length} reviews checked! ${accumulatedStats.live} live, ${accumulatedStats.missing} missing, ${accumulatedStats.error} errors`
-          );
-
-          onComplete?.(accumulatedStats);
-        }
       } catch (error) {
         console.error('❌ Fatal error in batch processing:', error);
         setProgress(prev => ({ ...prev, status: 'error' }));
         toast.error('Error during batch processing');
-      } finally {
         setIsProcessing(false);
-        clearBatchState(); // Clear localStorage after completion
+        clearBatchState();
       }
     },
     [dispatch, clearBatchState]
   );
 
   /**
-   * Process a single batch
+   * Monitor batch progress via SSE (serverside managed)
+   */
+  const monitorBatchProgress = async (
+    totalReviews: number,
+    onProgress?: (progress: BatchProgress, stats: BatchStats) => void,
+    onComplete?: (stats: BatchStats) => void
+  ): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      // Batched Redux updates to reduce client CPU load
+      const updateBuffer: Array<{ id: string; checkStatus: string; lastCheckedAt: string }> = [];
+      let batchUpdateTimer: NodeJS.Timeout | null = null;
+
+      const flushUpdates = () => {
+        if (updateBuffer.length === 0) return;
+        updateBuffer.forEach(update => dispatch(updateCheckStatus(update)));
+        updateBuffer.length = 0;
+      };
+
+      const scheduleFlush = () => {
+        if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
+        batchUpdateTimer = setTimeout(flushUpdates, 1000); // Batch every 1 second
+      };
+
+      // Connect to SSE (reuse existing connection if available)
+      let eventSource = eventSourceRef.current;
+      if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+        eventSource = new EventSource('/api/automation/sse');
+        eventSourceRef.current = eventSource;
+        console.log('📡 Created new SSE connection for serverside batch');
+      } else {
+        console.log('♻️ Reusing existing SSE connection for serverside batch');
+      }
+
+      eventSource.addEventListener('result', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          // Buffer Redux updates (reduce CPU load)
+          updateBuffer.push({
+            id: data.reviewId,
+            checkStatus: data.status,
+            lastCheckedAt: data.completedAt,
+          });
+          scheduleFlush();
+
+          // Update stats
+          setStats(prev => {
+            const newStats = {
+              live: data.status === 'LIVE' ? prev.live + 1 : prev.live,
+              missing: data.status === 'MISSING' ? prev.missing + 1 : prev.missing,
+              error: data.status === 'ERROR' ? prev.error + 1 : prev.error,
+            };
+            onProgress?.(progress, newStats);
+            return newStats;
+          });
+        } catch (error) {
+          console.error('Error parsing SSE result:', error);
+        }
+      });
+
+      eventSource.addEventListener('stats', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const backendStats = data.stats;
+
+          // Update progress based on backend stats
+          const overallProgress = Math.round((backendStats.completed / totalReviews) * 100);
+
+          setProgress(prev => ({
+            ...prev,
+            processedReviews: backendStats.completed,
+            overallProgress,
+          }));
+
+          // Check if complete (queue empty AND no active threads)
+          const isComplete = backendStats.completed >= totalReviews ||
+              (backendStats.pending === 0 && backendStats.processing === 0 && backendStats.completed > 0);
+
+          if (isComplete) {
+            if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
+            flushUpdates();
+            console.log(`✅ Serverside batch complete (${backendStats.completed}/${totalReviews} processed)`);
+
+            setProgress(prev => ({
+              ...prev,
+              overallProgress: 100,
+              status: 'completed',
+            }));
+
+            setIsProcessing(false);
+            clearBatchState();
+
+            toast.success(
+              `All ${totalReviews} reviews checked! ${stats.live} live, ${stats.missing} missing, ${stats.error} errors`
+            );
+
+            onComplete?.(stats);
+            resolve();
+          }
+        } catch (error) {
+          console.error('Error parsing SSE stats:', error);
+        }
+      });
+
+      // Listen for system-complete event
+      eventSource.addEventListener('system-complete', (event) => {
+        console.log('📢 Backend system-complete event received');
+        if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
+        flushUpdates();
+
+        setProgress(prev => ({
+          ...prev,
+          overallProgress: 100,
+          status: 'completed',
+        }));
+
+        setIsProcessing(false);
+        clearBatchState();
+
+        toast.success(`All reviews checked!`);
+        onComplete?.(stats);
+        resolve();
+      });
+
+      eventSource.onerror = (error) => {
+        console.error('SSE error:', error);
+        if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
+        flushUpdates();
+
+        if (eventSource === eventSourceRef.current) {
+          eventSource.close();
+          eventSourceRef.current = null;
+        }
+
+        reject(new Error('SSE connection failed'));
+      };
+
+      // Timeout after 30 minutes
+      setTimeout(() => {
+        if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
+        flushUpdates();
+        console.warn('⚠️ Serverside batch timeout');
+        reject(new Error('Batch processing timeout'));
+      }, 1800000);
+    });
+  };
+
+  /**
+   * Process a single batch (DEPRECATED - keeping for backward compatibility)
    */
   const processSingleBatch = async (
     reviewIds: string[],
