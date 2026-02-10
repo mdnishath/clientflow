@@ -33,12 +33,11 @@ export function OnlineUsersAdmin() {
     const eventSourceRef = useRef<EventSource | null>(null);
     const previousUsersRef = useRef<Map<string, 'online' | 'away' | 'offline'>>(new Map());
 
-    // Only show for admins
-    if (session?.user?.role !== "ADMIN") {
-        return null;
-    }
-
     useEffect(() => {
+        // Only run for admins
+        if (session?.user?.role !== "ADMIN") {
+            return;
+        }
         // Initial heartbeat for current user
         const sendHeartbeat = async () => {
             try {
@@ -156,6 +155,11 @@ export function OnlineUsersAdmin() {
                 return "Offline";
         }
     };
+
+    // Only show for admins
+    if (session?.user?.role !== "ADMIN") {
+        return null;
+    }
 
     if (loading) {
         return (
