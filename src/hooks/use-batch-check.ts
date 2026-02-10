@@ -331,15 +331,27 @@ export function useBatchCheck() {
           });
           scheduleFlush();
 
-          // Update stats
+          // Update stats AND progress in real-time
           setStats(prev => {
             const newStats = {
               live: data.status === 'LIVE' ? prev.live + 1 : prev.live,
               missing: data.status === 'MISSING' ? prev.missing + 1 : prev.missing,
               error: data.status === 'ERROR' ? prev.error + 1 : prev.error,
             };
-            onProgress?.(progress, newStats);
             return newStats;
+          });
+
+          // Update progress count in real-time (THIS WAS MISSING!)
+          setProgress(prev => {
+            const newProcessed = prev.processedReviews + 1;
+            const newProgress = Math.round((newProcessed / totalReviews) * 100);
+            const updatedProgress = {
+              ...prev,
+              processedReviews: newProcessed,
+              overallProgress: newProgress,
+            };
+            onProgress?.(updatedProgress, stats);
+            return updatedProgress;
           });
         } catch (error) {
           console.error('Error parsing SSE result:', error);
