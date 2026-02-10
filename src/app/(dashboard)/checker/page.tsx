@@ -24,6 +24,7 @@ import {
     Calendar,
     Pencil,
     Package,
+    StopCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1240,6 +1241,28 @@ export default function CheckerPage() {
                                 <div className="text-lg font-bold text-orange-400">{batchStats.error}</div>
                                 <div className="text-xs text-slate-400">Errors</div>
                             </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex gap-2 pt-2 border-t border-slate-700">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleStop}
+                                className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
+                            >
+                                <StopCircle size={14} className="mr-2" />
+                                Stop
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleReset}
+                                className="flex-1 border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white"
+                            >
+                                <RotateCcw size={14} className="mr-2" />
+                                Clear
+                            </Button>
                         </div>
                     </div>
                 </div>

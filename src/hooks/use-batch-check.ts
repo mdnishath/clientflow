@@ -64,28 +64,69 @@ export function useBatchCheck() {
     return `batchCheckState_${userId}`;
   }, [session?.user?.id]);
 
-  // Restore batch state on mount (for refresh support)
+  // Restore batch state on mount with validation (for refresh support)
   useEffect(() => {
     if (!session?.user?.id) return; // Don't restore if no user
 
-    const savedState = localStorage.getItem(getBatchStateKey());
-    if (savedState) {
+    const validateAndRestoreState = async () => {
+      const savedState = localStorage.getItem(getBatchStateKey());
+      if (!savedState) return;
+
       try {
         const state = JSON.parse(savedState);
+
+        // Check if state is too old (> 1 hour = stale after deployment)
+        const isStale = state.timestamp && (Date.now() - state.timestamp > 3600000);
+        if (isStale) {
+          console.log('🗑️ Clearing stale state (>1 hour old)');
+          localStorage.removeItem(getBatchStateKey());
+          return;
+        }
+
+        // If state claims to be processing, validate with backend
         if (state.isProcessing) {
-          console.log('🔄 Restoring batch processing state after refresh');
-          setIsProcessing(state.isProcessing);
-          setProgress(state.progress);
-          setStats(state.stats);
-          // Reconnect to SSE
-          reconnectToSSE();
+          try {
+            const response = await fetch('/api/automation/status');
+            if (!response.ok) {
+              console.log('⚠️ Cannot validate state with backend, clearing');
+              localStorage.removeItem(getBatchStateKey());
+              return;
+            }
+
+            const backendState = await response.json();
+
+            // Check if backend actually has active checks
+            const backendIsIdle = backendState.stats.processing === 0 &&
+                                 backendState.stats.pending === 0;
+
+            if (backendIsIdle) {
+              console.log('⚠️ State mismatch: frontend thinks running but backend is idle. Clearing state.');
+              localStorage.removeItem(getBatchStateKey());
+              toast.info('Previous batch session has ended');
+              return;
+            }
+
+            // Backend confirms active session - safe to restore
+            console.log('✅ Backend confirms active session, restoring state');
+            setIsProcessing(true);
+            setProgress(state.progress);
+            setStats(state.stats);
+            // Reconnect to SSE
+            reconnectToSSE();
+          } catch (error) {
+            console.error('Error validating state with backend:', error);
+            // If we can't reach backend, clear state to be safe
+            localStorage.removeItem(getBatchStateKey());
+          }
         }
       } catch (error) {
         console.error('Error restoring batch state:', error);
         localStorage.removeItem(getBatchStateKey());
       }
-    }
-  }, [getBatchStateKey, session?.user?.id]);
+    };
+
+    validateAndRestoreState();
+  }, [getBatchStateKey, session?.user?.id, reconnectToSSE]);
 
   // FIX: Cleanup on unmount to prevent memory leaks
   useEffect(() => {
