@@ -41,13 +41,11 @@ import {
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { CheckStatusBadge } from "@/components/reviews/check-status-badge";
 import { CopyButton } from "@/components/ui/copy-button";
-import { useLiveCheck } from "@/hooks/use-live-check";
 import { useBatchCheck } from "@/hooks/use-batch-check";
 import { VirtualizedReviewList } from "@/components/reviews/virtualized-review-list";
 
 // PERFORMANCE: Lazy load heavy components (40% faster initial load)
 // These components are only loaded when needed
-const LiveCheckProgress = lazy(() => import("@/components/reviews/live-check-progress").then(m => ({ default: m.LiveCheckProgress })));
 const ExportButton = lazy(() => import("@/components/reviews/export-button").then(m => ({ default: m.ExportButton })));
 const ReviewForm = lazy(() => import("@/components/reviews/review-form").then(m => ({ default: m.ReviewForm })));
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
@@ -215,20 +213,9 @@ export default function CheckerPage() {
 
     const isLoading = loading === "pending";
 
-    // Live Check Hook (for small batches <=200)
+    // UNIFIED: Use only batch check for ALL checks (small or large)
     const {
-        stats,
-        status: checkStatus,
-        isOpen: isProgressOpen,
-        setIsOpen: setProgressOpen,
-        startChecks,
-        stopChecks,
-        reset
-    } = useLiveCheck();
-
-    // Batch Check Hook (for large batches >200)
-    const {
-        isProcessing: isBatchProcessing,
+        isProcessing: isChecking,
         progress: batchProgress,
         stats: batchStats,
         startBatchCheck,
@@ -239,24 +226,14 @@ export default function CheckerPage() {
     // Lock Management
     const { isLocked, getLock, acquireLock, releaseLock, currentUser } = useReviewLocks();
 
-    const isChecking = checkStatus === "STARTING" || checkStatus === "RUNNING" || isBatchProcessing;
-
-    // Combined stop handler for both regular and batch checking
+    // Unified stop handler
     const handleStop = async () => {
-        if (isBatchProcessing) {
-            await stopBatchCheck();
-        }
-        if (checkStatus === "RUNNING" || checkStatus === "STARTING") {
-            await stopChecks();
-        }
+        await stopBatchCheck();
     };
 
-    // Combined reset/clear handler
+    // Unified reset/clear handler
     const handleReset = () => {
-        if (isBatchProcessing) {
-            clearBatchCheck();
-        }
-        reset();
+        clearBatchCheck();
     };
 
     // Client-side filtering to ensure real-time updates respect the current view
@@ -446,59 +423,35 @@ export default function CheckerPage() {
         }
     };
 
-    // Live Check functions with automatic batch detection
-    const BATCH_THRESHOLD = 200; // Use batch processing for >200 reviews
-
+    // UNIFIED: All checks use batch check (serverside managed)
     const handleCheckSelected = async () => {
         if (selectedIds.length === 0) {
             toast.error("No reviews selected");
             return;
         }
 
-        // Detect if we need batch processing
-        if (selectedIds.length > BATCH_THRESHOLD) {
-            toast.info(`Processing ${selectedIds.length} reviews in batches of 100`, {
-                description: "This prevents browser hangs and ensures smooth processing"
-            });
+        toast.success(`Checking ${selectedIds.length} reviews with ${threadCount} threads...`);
 
-            await startBatchCheck(selectedIds, {
-                batchSize: 100,
-                concurrency: threadCount as 3 | 5 | 10,
-                delayBetweenBatches: 500,
-                onComplete: () => {
-                    fetchReviewsData();
-                },
-            });
-        } else {
-            // Standard processing for small batches
-            startChecks(selectedIds, threadCount);
-            toast.success(`Checking ${selectedIds.length} reviews with ${threadCount} threads...`);
-        }
+        await startBatchCheck(selectedIds, {
+            concurrency: threadCount as 3 | 5 | 10,
+            onComplete: () => {
+                fetchReviewsData();
+            },
+        });
     };
 
     const handleCheckAll = async () => {
         const allIds = reviews.map((r) => r.id);
         setSelectedIds(allIds);
 
-        // Detect if we need batch processing
-        if (allIds.length > BATCH_THRESHOLD) {
-            toast.info(`Processing ${allIds.length} reviews in batches of 100`, {
-                description: "This prevents browser hangs and ensures smooth processing"
-            });
+        toast.success(`Checking ${allIds.length} reviews with ${threadCount} threads...`);
 
-            await startBatchCheck(allIds, {
-                batchSize: 100,
-                concurrency: threadCount as 3 | 5 | 10,
-                delayBetweenBatches: 500,
-                onComplete: () => {
-                    fetchReviewsData();
-                },
-            });
-        } else {
-            // Standard processing for small batches
-            startChecks(allIds, threadCount);
-            toast.success(`Checking ${allIds.length} reviews with ${threadCount} threads...`);
-        }
+        await startBatchCheck(allIds, {
+            concurrency: threadCount as 3 | 5 | 10,
+            onComplete: () => {
+                fetchReviewsData();
+            },
+        });
     };
 
     const handleEditReview = (review: Review) => {
@@ -754,8 +707,8 @@ export default function CheckerPage() {
                 </div>
             )}
 
-            {/* Select All Header - Hidden during batch processing */}
-            {!isBatchProcessing && (
+            {/* Select All Header - Hidden during checking */}
+            {!isChecking && (
                 <div className="flex items-center gap-3 mb-3 px-1">
                     <Checkbox
                         checked={allPageSelected}
@@ -774,8 +727,8 @@ export default function CheckerPage() {
             )}
 
             {/* Reviews List - PROFILE PAGE STYLE */}
-            {/* OPTIMIZATION: Hide review list during batch processing to save RAM */}
-            {isBatchProcessing ? (
+            {/* OPTIMIZATION: Hide review list during checking to save RAM */}
+            {isChecking ? (
                 <Card className="bg-slate-800/30 border-slate-700">
                     <CardContent className="py-12 text-center">
                         <Package className="mx-auto h-10 w-10 text-emerald-400 mb-3 animate-pulse" />
@@ -1191,30 +1144,26 @@ export default function CheckerPage() {
                 </div>
             )}
 
-            {/* UNIFIED POPUP HANDLING: Show only ONE popup based on processing mode */}
-            {/* Priority: Batch processing > Regular checking */}
-            {/* If batch processing, show batch popup with all stats */}
-            {/* If regular checking (non-batch), show regular popup */}
-            {/* NEVER show both popups simultaneously */}
+            {/* UNIFIED POPUP: Single popup for ALL checks (small or large) */}
+            {/* Serverside managed, refresh-proof */}
 
-            {isBatchProcessing ? (
-                /* Batch Processing Progress (for large batches >200) */
+            {isChecking && (
                 <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-4 w-96">
                     <div className="space-y-3">
                         <div className="flex items-center justify-between">
                             <h3 className="font-semibold text-white flex items-center gap-2">
                                 <Loader2 className="animate-spin text-indigo-400" size={16} />
-                                Batch Processing
+                                Live Checking
                             </h3>
                             <span className="text-xs text-slate-400">
-                                Batch {batchProgress.currentBatch} of {batchProgress.totalBatches}
+                                {batchProgress.totalReviews} reviews
                             </span>
                         </div>
 
                         {/* Overall Progress */}
                         <div>
                             <div className="flex justify-between text-xs mb-1">
-                                <span className="text-slate-400">Overall Progress</span>
+                                <span className="text-slate-400">Progress</span>
                                 <span className="text-white font-medium">{batchProgress.overallProgress}%</span>
                             </div>
                             <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -1267,20 +1216,6 @@ export default function CheckerPage() {
                         </div>
                     </div>
                 </div>
-            ) : (
-                /* Regular Live Check Progress Panel (for small batches <=200) */
-                !isBatchProcessing && (
-                    <Suspense fallback={<div></div>}>
-                        <LiveCheckProgress
-                            stats={stats}
-                            status={checkStatus}
-                            isOpen={isProgressOpen}
-                            onToggle={setProgressOpen}
-                            onStop={handleStop}
-                            onReset={handleReset}
-                        />
-                    </Suspense>
-                )
             )}
 
             {/* Review Form - Lazy loaded */}
