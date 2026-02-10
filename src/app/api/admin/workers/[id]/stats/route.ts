@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/rbac";
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 
 // GET /api/admin/workers/[id]/stats - Get detailed stats for a specific worker (ADMIN only)
 export async function GET(
@@ -10,10 +11,16 @@ export async function GET(
     const error = await requireRole(["ADMIN"]);
     if (error) return error;
 
+    const session = await auth();
+    if (!session?.user?.id) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { id: workerId } = await params;
+    const adminId = session.user.id;
 
     try {
-        // Verify worker exists
+        // Verify worker exists AND belongs to this admin (ISOLATION)
         const worker = await prisma.user.findUnique({
             where: { id: workerId },
             select: {
@@ -21,12 +28,13 @@ export async function GET(
                 name: true,
                 email: true,
                 role: true,
+                parentAdminId: true,
             },
         });
 
-        if (!worker || worker.role !== "WORKER") {
+        if (!worker || worker.role !== "WORKER" || worker.parentAdminId !== adminId) {
             return NextResponse.json(
-                { error: "Worker not found" },
+                { error: "Worker not found or access denied" },
                 { status: 404 }
             );
         }

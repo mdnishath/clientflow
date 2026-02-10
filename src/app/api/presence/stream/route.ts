@@ -1,8 +1,13 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
-// Store for SSE connections
-const connections = new Map<string, ReadableStreamDefaultController>();
+// Store for SSE connections with admin metadata for filtering
+const connections = new Map<string, {
+    controller: ReadableStreamDefaultController;
+    workerIds: Set<string>;
+    clientIds: Set<string>;
+}>();
 
 // Store for online users with detailed info
 export const onlineUsers = new Map<string, {
@@ -44,22 +49,29 @@ setInterval(() => {
     }
 }, 10000); // Check every 10 seconds
 
-// Broadcast presence update to all connected admin clients
+// Broadcast presence update to all connected admin clients (ISOLATED per admin)
 export function broadcastPresenceUpdate(event: 'user_online' | 'user_offline' | 'user_away' | 'update' = 'update', userId?: string) {
-    const users = Array.from(onlineUsers.values());
+    const allUsers = Array.from(onlineUsers.values());
 
-    const data = JSON.stringify({
-        event,
-        userId,
-        users,
-        total: users.filter(u => u.status === 'online').length,
-        timestamp: Date.now(),
-    });
-
-    // Send to all connected clients
-    for (const controller of connections.values()) {
+    // Send filtered data to each admin
+    for (const [adminId, conn] of connections.entries()) {
         try {
-            controller.enqueue(`data: ${data}\n\n`);
+            // Filter users: admin themselves + their workers + their clients
+            const filteredUsers = allUsers.filter(user =>
+                user.userId === adminId ||
+                conn.workerIds.has(user.userId) ||
+                conn.clientIds.has(user.userId)
+            );
+
+            const data = JSON.stringify({
+                event,
+                userId,
+                users: filteredUsers,
+                total: filteredUsers.filter(u => u.status === 'online').length,
+                timestamp: Date.now(),
+            });
+
+            conn.controller.enqueue(`data: ${data}\n\n`);
         } catch (error) {
             console.error("Failed to send SSE message:", error);
         }
@@ -77,24 +89,99 @@ export async function GET(req: NextRequest) {
 
     const adminId = session.user.id;
 
+    // Helper function to filter users for this admin only (ISOLATED)
+    const getFilteredUsers = async () => {
+        const allUsers = Array.from(onlineUsers.values());
+
+        // Get admin's workers and clients from database
+        const [workers, clients] = await Promise.all([
+            prisma.user.findMany({
+                where: {
+                    parentAdminId: adminId,
+                    role: "WORKER",
+                },
+                select: { id: true },
+            }),
+            prisma.client.findMany({
+                where: {
+                    userId: adminId,
+                },
+                select: {
+                    userAccount: {
+                        select: { id: true },
+                    },
+                },
+            }),
+        ]);
+
+        const workerIds = new Set(workers.map(w => w.id));
+        const clientIds = new Set(
+            clients
+                .filter(c => c.userAccount?.id)
+                .map(c => c.userAccount!.id)
+        );
+
+        // Filter: admin themselves + their workers + their clients
+        return allUsers.filter(user =>
+            user.userId === adminId ||
+            workerIds.has(user.userId) ||
+            clientIds.has(user.userId)
+        );
+    };
+
     // Create SSE stream
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
-        start(controller) {
-            // Store connection
-            connections.set(adminId, controller);
+        async start(controller) {
+            // Get and cache worker/client IDs for this admin
+            const [workers, clients] = await Promise.all([
+                prisma.user.findMany({
+                    where: {
+                        parentAdminId: adminId,
+                        role: "WORKER",
+                    },
+                    select: { id: true },
+                }),
+                prisma.client.findMany({
+                    where: {
+                        userId: adminId,
+                    },
+                    select: {
+                        userAccount: {
+                            select: { id: true },
+                        },
+                    },
+                }),
+            ]);
 
-            // Send initial data
-            const users = Array.from(onlineUsers.values());
-            const initialData = JSON.stringify({
-                event: 'init',
-                users,
-                total: users.filter(u => u.status === 'online').length,
-                timestamp: Date.now(),
+            const workerIds = new Set(workers.map(w => w.id));
+            const clientIds = new Set(
+                clients
+                    .filter(c => c.userAccount?.id)
+                    .map(c => c.userAccount!.id)
+            );
+
+            // Store connection with metadata
+            connections.set(adminId, {
+                controller,
+                workerIds,
+                clientIds,
             });
 
-            controller.enqueue(encoder.encode(`data: ${initialData}\n\n`));
+            // Send initial filtered data
+            try {
+                const users = await getFilteredUsers();
+                const initialData = JSON.stringify({
+                    event: 'init',
+                    users,
+                    total: users.filter(u => u.status === 'online').length,
+                    timestamp: Date.now(),
+                });
+                controller.enqueue(encoder.encode(`data: ${initialData}\n\n`));
+            } catch (err) {
+                console.error("Failed to get filtered users:", err);
+            }
 
             // Send heartbeat every 15 seconds to keep connection alive
             const heartbeat = setInterval(() => {

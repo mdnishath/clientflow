@@ -22,6 +22,7 @@ export async function GET() {
         const userId = session.user.id;
         const role = session.user.role;
         const clientId = session.user.clientId;
+        const parentAdminId = session.user.parentAdminId;
 
         // Build where clause based on role
         let whereClause: any = {};
@@ -34,15 +35,25 @@ export async function GET() {
                 },
             };
         } else if (role === "WORKER") {
-            // Worker sees data they created/updated
+            // Worker sees data under their parent admin
+            const effectiveAdminId = parentAdminId || userId;
             whereClause = {
-                OR: [
-                    { createdById: userId },
-                    { updatedById: userId },
-                ],
+                profile: {
+                    client: {
+                        userId: effectiveAdminId,
+                    },
+                },
+            };
+        } else if (role === "ADMIN") {
+            // ADMIN sees only their own clients' data (ISOLATED)
+            whereClause = {
+                profile: {
+                    client: {
+                        userId: userId,
+                    },
+                },
             };
         }
-        // ADMIN sees all data (no filter)
 
         // Overall status counts
         const statusCounts = await prisma.review.groupBy({
@@ -114,7 +125,7 @@ export async function GET() {
             },
         });
 
-        // Top performers (if admin) - simplified
+        // Top performers (if admin) - simplified and isolated
         let topPerformers: Array<{ userId: string; userName: string; liveCount: number }> = [];
         if (role === "ADMIN") {
             const thirtyDaysAgoPerf = new Date();
@@ -122,6 +133,7 @@ export async function GET() {
 
             const liveReviews = await prisma.review.findMany({
                 where: {
+                    ...whereClause, // Add admin isolation
                     status: "LIVE",
                     completedAt: { gte: thirtyDaysAgoPerf },
                     liveById: { not: null },
