@@ -9,6 +9,7 @@ import { chromium, Browser, Page } from "playwright";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { Review, CheckResult, AutomationConfig } from "./types";
+import { browserPool } from "./browser-pool";
 
 export class LiveChecker {
   private config: AutomationConfig;
@@ -16,7 +17,7 @@ export class LiveChecker {
   constructor(config: Partial<AutomationConfig> = {}) {
     this.config = {
       maxConcurrency: 3,
-      timeout: 45000, // 45 seconds timeout
+      timeout: 30000, // OPTIMIZED: Reduced from 45s to 30s for faster checks
       screenshotDir: "./public/screenshots",
       headless: true,
       ...config,
@@ -80,23 +81,12 @@ export class LiveChecker {
     let page: Page | null = null;
 
     try {
-      console.log(`📄 Launching fresh browser for ${review.id}`);
+      console.log(`📄 Getting browser for ${review.id}`);
       console.log(`🔗 Link: ${review.reviewLiveLink}`);
 
-      // Launch fresh browser with maximum stealth
-      browser = await chromium.launch({
-        headless: this.config.headless,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-blink-features=AutomationControlled",
-          "--disable-web-security",
-          "--disable-features=IsolateOrigins,site-per-process",
-          "--disable-dev-shm-usage", // Helps with resource limits
-          "--no-first-run",
-          "--no-default-browser-check",
-        ],
-      });
+      // PERFORMANCE: Use browser pool for faster checks
+      // Gets browser from pool (instant) or creates new one (2-3s)
+      browser = await browserPool.getBrowser();
 
       // Create context with maximum stealth settings
       const context = await browser.newContext({
@@ -134,8 +124,17 @@ export class LiveChecker {
             : originalQuery(parameters);
       });
 
-      // Block heavy assets to speed up
-      await page.route("**/*.{png,jpg,jpeg,gif,webp,svg}", (route) => route.abort());
+      // OPTIMIZATION: Block heavy assets and unnecessary resources to speed up page load
+      await page.route("**/*", (route) => {
+        const resourceType = route.request().resourceType();
+        // Block images, fonts, media, and other heavy resources
+        // Only allow document, script, xhr, and fetch for faster loading
+        if (['image', 'font', 'media', 'stylesheet', 'manifest', 'other'].includes(resourceType)) {
+          route.abort();
+        } else {
+          route.continue();
+        }
+      });
 
       // BETTER APPROACH: Resolve short links first, then navigate
       let finalUrl = review.reviewLiveLink;
@@ -160,27 +159,28 @@ export class LiveChecker {
 
       let navigationSuccess = false;
 
-      // Strategy 1: Try domcontentloaded (fast)
+      // OPTIMIZED: Aggressive fast navigation strategy
+      // Strategy 1: Try commit (fastest - just wait for navigation to start)
       try {
         await page.goto(finalUrl, {
-          waitUntil: "domcontentloaded",
-          timeout: 30000, // 30 seconds
+          waitUntil: "commit",
+          timeout: 15000, // OPTIMIZED: Reduced from 30s to 15s
         });
+        // OPTIMIZED: Reduced wait from 2s to 1s
+        await page.waitForTimeout(1000);
         navigationSuccess = true;
-        console.log(`✓ Navigation successful (domcontentloaded)`);
+        console.log(`✓ Navigation successful (commit)`);
       } catch (error1) {
         console.log(`⚠ Strategy 1 failed, trying fallback...`);
 
-        // Strategy 2: Try 'commit' (fastest - just wait for navigation to start)
+        // Strategy 2: Try domcontentloaded (backup)
         try {
           await page.goto(finalUrl, {
-            waitUntil: "commit", // Don't wait for page load, just commit
-            timeout: 20000, // 20 seconds
+            waitUntil: "domcontentloaded",
+            timeout: 20000, // OPTIMIZED: Reduced from 30s to 20s
           });
-          // Give page a moment to render
-          await page.waitForTimeout(2000);
           navigationSuccess = true;
-          console.log(`✓ Navigation successful (commit fallback)`);
+          console.log(`✓ Navigation successful (domcontentloaded fallback)`);
         } catch (error2) {
           console.log(`⚠ Strategy 2 failed, trying last resort...`);
 
@@ -190,8 +190,8 @@ export class LiveChecker {
             await page.goto('about:blank');
             // Now navigate without waiting
             page.goto(finalUrl).catch(() => {}); // Fire and forget
-            // Wait for page to load manually
-            await page.waitForTimeout(5000);
+            // OPTIMIZED: Reduced wait from 5s to 3s
+            await page.waitForTimeout(3000);
             navigationSuccess = true;
             console.log(`✓ Navigation successful (no-wait fallback)`);
           } catch (error3) {
@@ -202,9 +202,7 @@ export class LiveChecker {
         }
       }
 
-      // Reduced wait time for speed (1 second instead of 2-3)
-      await page.waitForTimeout(1000);
-
+      // OPTIMIZED: Removed extra wait - cookie consent handler already waits
       // Handle cookie consent (if present)
       await this.handleCookieConsent(page);
 
@@ -256,10 +254,11 @@ export class LiveChecker {
         checkedAt: new Date(),
       };
     } finally {
-      // IMPORTANT: Close browser after each check (SAME AS EXPRESS APP)
+      // PERFORMANCE: Return browser to pool instead of closing
+      // This allows browser reuse for next check (0s vs 2-3s launch time)
       if (browser) {
-        await browser.close().catch(() => {
-          // Ignore close errors
+        await browserPool.returnBrowser(browser).catch(() => {
+          // Ignore errors
         });
       }
     }
@@ -267,13 +266,11 @@ export class LiveChecker {
 
   /**
    * Handle Google cookie consent dialog
-   * Same logic as working app
+   * OPTIMIZED for speed
    */
   private async handleCookieConsent(page: Page): Promise<void> {
     try {
-      console.log("Checking for cookie consent...");
-
-      // Handle Cookie Consent Interstitials (same as working app)
+      // OPTIMIZED: Check all selectors in parallel instead of sequentially
       const consentSelectors = [
         'button:has-text("Accept all")',
         'button:has-text("I agree")',
@@ -281,23 +278,23 @@ export class LiveChecker {
         'button[aria-label="I agree"]',
       ];
 
-      for (const sel of consentSelectors) {
-        try {
-          const btn = page.locator(sel).first();
-          if (await btn.isVisible({ timeout: 2000 })) {
-            await btn.click();
-            await page.waitForTimeout(1000);
-            console.log(`✓ Clicked consent: ${sel}`);
-            return;
-          }
-        } catch (e) {
-          // Continue to next selector
-        }
-      }
+      // Try all selectors simultaneously with shorter timeout
+      const clickPromises = consentSelectors.map(sel =>
+        page.locator(sel).first().click({ timeout: 1000 }).catch(() => null)
+      );
 
-      console.log("No cookie consent needed");
+      // Wait for first successful click or all to fail
+      await Promise.race([
+        Promise.any(clickPromises.filter(p => p !== null)),
+        new Promise(resolve => setTimeout(resolve, 1500)) // 1.5s max wait
+      ]).catch(() => {
+        // No consent found - that's ok
+      });
+
+      // Small wait after clicking
+      await page.waitForTimeout(500);
     } catch (error) {
-      console.log("Cookie consent handling completed");
+      // Ignore errors - consent is optional
     }
   }
 
@@ -330,19 +327,19 @@ export class LiveChecker {
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      console.log("🔍 AUDITING DOM (Using 100% working logic)...");
+      console.log("🔍 AUDITING DOM (Optimized for speed)...");
 
-      // Wait for initial shell to load (optimized for speed)
-      await page.waitForTimeout(1500); // Reduced from 3s to 1.5s
+      // OPTIMIZED: Reduced initial wait from 1.5s to 800ms
+      await page.waitForTimeout(800);
 
-      // Wait for Google Maps selectors (optimized for speed)
+      // OPTIMIZED: Wait for Google Maps selectors with shorter timeout
       try {
         await page.waitForSelector(".jftiEf, .Upo0Ec, [data-review-id], .MyV7u, .GHT2ce", {
-          timeout: 5000, // Reduced from 10s for faster checks
+          timeout: 3000, // OPTIMIZED: Reduced from 5s to 3s for faster checks
         });
       } catch (e) {
-        // Fallback wait (reduced from 3s to 1s for speed)
-        await page.waitForTimeout(1000);
+        // OPTIMIZED: Fallback wait reduced from 1s to 500ms
+        await page.waitForTimeout(500);
       }
 
       // Extract Google Review ID for precise matching

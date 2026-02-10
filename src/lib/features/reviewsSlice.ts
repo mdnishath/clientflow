@@ -195,19 +195,37 @@ const reviewsSlice = createSlice({
             action: PayloadAction<{ id: string; checkStatus: string; lastCheckedAt?: string }>
         ) => {
             const { id, checkStatus, lastCheckedAt } = action.payload;
-            console.log(`🔄 Redux: Updating review ${id} to ${checkStatus}`);
+            console.log(`🔄 Redux: Updating review ${id} checkStatus to ${checkStatus}`);
             const review = state.items.find((r) => r.id === id);
             if (review) {
                 review.checkStatus = checkStatus;
                 if (lastCheckedAt) review.lastCheckedAt = lastCheckedAt;
 
-                // CRITICAL: Sync main status if check result is definitive (LIVE/MISSING)
-                // This mimics the server-side DB update logic
+                // CRITICAL FIX: Implement same status logic as backend to prevent UI mismatch
+                // NEW RULES:
+                // - If main status is APPLIED and badge is MISSING -> Keep APPLIED (don't change)
+                // - If main status is APPLIED and badge is LIVE -> Change to LIVE
+                // - If badge is LIVE -> Change to LIVE (regardless of current status)
+                // - If badge is MISSING (non-APPLIED status) -> Change to MISSING
+
                 if (checkStatus === "LIVE") {
+                    // Badge is LIVE -> main status becomes LIVE (always)
+                    console.log(`✅ ${id}: Badge LIVE -> Status changing to LIVE`);
                     review.status = "LIVE";
+                    review.completedAt = new Date().toISOString();
                 } else if (checkStatus === "MISSING") {
-                    review.status = "MISSING";
+                    // Badge is MISSING -> check if status is APPLIED
+                    if (review.status === "APPLIED") {
+                        // If main status is APPLIED -> Keep APPLIED (don't downgrade)
+                        console.log(`✅ ${id}: Badge MISSING but Status is APPLIED -> Keeping APPLIED (no change)`);
+                        // Don't change review.status - this fixes the UI mismatch bug!
+                    } else {
+                        // For other statuses -> Change to MISSING
+                        console.log(`✅ ${id}: Badge MISSING -> Status changing to MISSING`);
+                        review.status = "MISSING";
+                    }
                 }
+                // For ERROR status, we don't change the main status, only checkStatus
 
                 // Remove from checking list if final status
                 if (checkStatus !== "CHECKING") {

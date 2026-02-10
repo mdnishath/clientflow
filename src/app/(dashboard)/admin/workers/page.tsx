@@ -21,9 +21,11 @@ import {
     Shield,
     Eye,
     EyeOff,
+    KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { WorkerStatistics } from "@/components/admin/worker-statistics";
 
 interface Worker {
     id: string;
@@ -55,6 +57,9 @@ export default function WorkersPage() {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [resetPasswordDialog, setResetPasswordDialog] = useState<{ open: boolean; workerId: string; workerName: string }>({ open: false, workerId: "", workerName: "" });
+    const [newPassword, setNewPassword] = useState("");
+    const [showNewPassword, setShowNewPassword] = useState(false);
 
     const [newWorker, setNewWorker] = useState({
         email: "",
@@ -176,6 +181,37 @@ export default function WorkersPage() {
         }
     };
 
+    const handleResetPassword = async () => {
+        if (!newPassword.trim() || newPassword.length < 6) {
+            toast.error("Password must be at least 6 characters");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const res = await fetch(`/api/admin/workers/${resetPasswordDialog.workerId}/reset-password`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ newPassword }),
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                toast.success(data.message || "Password reset successfully");
+                setResetPasswordDialog({ open: false, workerId: "", workerName: "" });
+                setNewPassword("");
+                setShowNewPassword(false);
+            } else {
+                toast.error(data.error || "Failed to reset password");
+            }
+        } catch {
+            toast.error("Failed to reset password");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     return (
         <div className="p-6 space-y-6">
             {/* Header */}
@@ -271,6 +307,9 @@ export default function WorkersPage() {
                 </Card>
             )}
 
+            {/* Detailed Worker Statistics */}
+            <WorkerStatistics />
+
             {/* Workers List */}
             {loading ? (
                 <div className="flex items-center justify-center min-h-[300px]">
@@ -317,14 +356,25 @@ export default function WorkersPage() {
                                         </p>
                                     </div>
 
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleDeleteWorker(worker.id)}
-                                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setResetPasswordDialog({ open: true, workerId: worker.id, workerName: worker.name || worker.email })}
+                                            className="text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10"
+                                            title="Reset Password"
+                                        >
+                                            <KeyRound className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleDeleteWorker(worker.id)}
+                                            className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
                                 </div>
 
                                 {/* Permissions */}
@@ -529,6 +579,78 @@ export default function WorkersPage() {
                                 </>
                             ) : (
                                 "Create Worker"
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Reset Password Dialog */}
+            <Dialog open={resetPasswordDialog.open} onOpenChange={(open) => {
+                setResetPasswordDialog({ open, workerId: "", workerName: "" });
+                setNewPassword("");
+                setShowNewPassword(false);
+            }}>
+                <DialogContent className="bg-slate-800 border-slate-700 text-white">
+                    <DialogHeader>
+                        <DialogTitle>Reset Password for {resetPasswordDialog.workerName}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="new-password" className="text-slate-300">
+                                New Password <span className="text-red-400">*</span>
+                            </Label>
+                            <div className="relative">
+                                <Input
+                                    id="new-password"
+                                    type={showNewPassword ? "text" : "password"}
+                                    value={newPassword}
+                                    onChange={(e) => setNewPassword(e.target.value)}
+                                    placeholder="••••••••"
+                                    className="bg-slate-900 border-slate-600 text-white pr-10"
+                                />
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="absolute right-0 top-0 h-full px-3 py-2 text-slate-400 hover:text-white"
+                                    onClick={() => setShowNewPassword(!showNewPassword)}
+                                >
+                                    {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </Button>
+                            </div>
+                            <p className="text-xs text-slate-400">
+                                Password must be at least 6 characters long
+                            </p>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setResetPasswordDialog({ open: false, workerId: "", workerName: "" });
+                                setNewPassword("");
+                                setShowNewPassword(false);
+                            }}
+                            className="border-slate-600 text-slate-300"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleResetPassword}
+                            disabled={isSubmitting || !newPassword.trim() || newPassword.length < 6}
+                            className="bg-indigo-600 hover:bg-indigo-700"
+                        >
+                            {isSubmitting ? (
+                                <>
+                                    <Loader2 size={14} className="mr-2 animate-spin" />
+                                    Resetting...
+                                </>
+                            ) : (
+                                <>
+                                    <KeyRound size={14} className="mr-2" />
+                                    Reset Password
+                                </>
                             )}
                         </Button>
                     </DialogFooter>

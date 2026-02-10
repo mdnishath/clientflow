@@ -372,21 +372,50 @@ class AutomationService {
 
   /**
    * Update review result in database
+   * NEW STATUS LOGIC RULES:
+   * - If main status is APPLIED and badge is MISSING -> keep APPLIED (don't change)
+   * - If main status is APPLIED and badge is LIVE -> change to LIVE
+   * - If both badges MISSING -> change to MISSING
+   * - If both badges LIVE -> change to LIVE
    */
   private async updateReviewResult(result: CheckResult): Promise<void> {
     try {
+      // First, get the current review status
+      const currentReview = await prisma.review.findUnique({
+        where: { id: result.reviewId },
+        select: { status: true }
+      });
+
+      if (!currentReview) {
+        console.error(`❌ Review ${result.reviewId} not found`);
+        return;
+      }
+
+      const currentStatus = currentReview.status;
+
       const updateData: any = {
         lastCheckedAt: result.checkedAt,
         checkStatus: result.status,
         screenshotPath: result.screenshotPath || null,
       };
 
+      // Apply the new status logic rules
       if (result.status === "LIVE") {
+        // Badge is LIVE -> main status becomes LIVE (regardless of current status)
         updateData.status = "LIVE";
         updateData.completedAt = new Date();
       } else if (result.status === "MISSING") {
-        updateData.status = "MISSING";
+        // Badge is MISSING
+        if (currentStatus === "APPLIED") {
+          // If main status is APPLIED and badge is MISSING -> keep APPLIED (no change)
+          // Don't update the main status, only update checkStatus
+          delete updateData.status;
+        } else {
+          // For other statuses, set to MISSING
+          updateData.status = "MISSING";
+        }
       }
+      // For ERROR status, we don't change the main status, only checkStatus
 
       await prisma.review.update({
         where: { id: result.reviewId },

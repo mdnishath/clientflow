@@ -79,6 +79,20 @@ export function useBatchCheck() {
     }
   }, []);
 
+  // FIX: Cleanup on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Abort any pending requests
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      // Close SSE connection
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
+
   // Save batch state to localStorage
   const saveBatchState = useCallback(() => {
     localStorage.setItem(BATCH_STATE_KEY, JSON.stringify({

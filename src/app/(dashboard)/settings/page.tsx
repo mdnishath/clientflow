@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
+import { AdvancedBackup } from "@/components/settings/advanced-backup";
 
 export default function SettingsPage() {
     const { isAdmin, user } = useAuth();
@@ -346,14 +347,17 @@ export default function SettingsPage() {
 
                 {activeTab === "admin" && isAdmin && (
                     <div className="space-y-6">
+                        {/* Advanced Backup with Mapping */}
+                        <AdvancedBackup />
+
                         <Card className="bg-slate-800/50 border-slate-700">
                             <CardHeader>
                                 <CardTitle className="text-white flex items-center gap-2">
                                     <Database className="h-5 w-5 text-indigo-400" />
-                                    Database Backup
+                                    Quick Backup (All Data)
                                 </CardTitle>
                                 <CardDescription className="text-slate-400">
-                                    Download a JSON backup of the entire database
+                                    Download a JSON backup of the entire database (legacy method)
                                 </CardDescription>
                             </CardHeader>
                             <CardContent>
@@ -362,7 +366,7 @@ export default function SettingsPage() {
                                     className="w-full bg-slate-700 hover:bg-slate-600"
                                 >
                                     <Download className="mr-2 h-4 w-4" />
-                                    Download Backup
+                                    Download Full Backup
                                 </Button>
                             </CardContent>
                         </Card>

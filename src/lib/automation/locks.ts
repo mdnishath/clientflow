@@ -10,12 +10,26 @@ interface Lock {
 export class LockManager {
     private locks = new Map<string, Lock>(); // ReviewId -> Lock
     private readonly LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    private cleanupInterval?: NodeJS.Timeout; // FIX: Store interval for cleanup
 
     constructor() {
         // Periodically clean up stale locks
         if (typeof setInterval !== "undefined") {
-            setInterval(() => this.cleanupStaleLocks(), 60 * 1000);
+            // FIX: Store interval reference to prevent memory leak
+            this.cleanupInterval = setInterval(() => this.cleanupStaleLocks(), 60 * 1000);
         }
+    }
+
+    /**
+     * Cleanup method to prevent memory leaks
+     * Call this when LockManager is no longer needed
+     */
+    destroy() {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = undefined;
+        }
+        this.locks.clear();
     }
 
     /**

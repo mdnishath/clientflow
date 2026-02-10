@@ -21,8 +21,9 @@ import {
     User,
     Upload,
     UserCog,
+    ArrowRightLeft,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -42,23 +43,49 @@ const navigation: NavItem[] = [
     { name: "Generator", href: "/generator", icon: Wand2, adminOnly: true },
     { name: "Reports", href: "/reports", icon: BarChart3 },
     { name: "Settings", href: "/settings", icon: User }, // Account settings (password)
-    // Admin-only items  
+    // Admin-only items
     { name: "Clients", href: "/clients", icon: Users, adminOnly: true },
     { name: "Accounts", href: "/admin/accounts", icon: UserCog, adminOnly: true },
     { name: "Workers", href: "/admin/workers", icon: Shield, adminOnly: true },
+    { name: "Migration Tool", href: "/admin/migration", icon: ArrowRightLeft, adminOnly: true },
     { name: "Import Profiles", href: "/admin/profiles/import", icon: Upload, adminOnly: true },
-
     { name: "Categories", href: "/admin/categories", icon: FolderOpen, adminOnly: true },
 ];
 
 export function Sidebar() {
     const pathname = usePathname();
-    const { user, isAdmin, role } = useAuth();
+    const { user, isAdmin, role, isLoading } = useAuth();
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+    // FIX: Prevent flicker by caching role on client-side
+    const [cachedRole, setCachedRole] = useState<string | null>(null);
+    const [mounted, setMounted] = useState(false);
+
+    // Hydration fix
+    useEffect(() => {
+        setMounted(true);
+        // Load cached role from localStorage
+        const stored = localStorage.getItem("user_role");
+        if (stored) {
+            setCachedRole(stored);
+        }
+    }, []);
+
+    // Update cache when role changes
+    useEffect(() => {
+        if (role && mounted) {
+            localStorage.setItem("user_role", role);
+            setCachedRole(role);
+        }
+    }, [role, mounted]);
+
+    // Use cached role during loading to prevent flicker
+    const effectiveRole = (isLoading && cachedRole) ? cachedRole : role;
+    const effectiveIsAdmin = effectiveRole === "ADMIN";
 
     // Filter navigation based on role
     const visibleNavigation = navigation.filter((item) => {
-        if (item.adminOnly && !isAdmin) return false;
+        if (item.adminOnly && !effectiveIsAdmin) return false;
         return true;
     });
 
