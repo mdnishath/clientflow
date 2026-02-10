@@ -5,6 +5,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { useAppDispatch } from '@/lib/hooks';
 import { startCheckingReviews, updateCheckStatus } from '@/lib/features/reviewsSlice';
 import { toast } from 'sonner';
@@ -34,9 +35,8 @@ interface BatchCheckOptions {
   onComplete?: (stats: BatchStats) => void;
 }
 
-const BATCH_STATE_KEY = 'batchCheckState';
-
 export function useBatchCheck() {
+  const { data: session } = useSession();
   const dispatch = useAppDispatch();
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState<BatchProgress>({
@@ -58,9 +58,17 @@ export function useBatchCheck() {
   const isPausedRef = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  // Get user-specific localStorage key
+  const getBatchStateKey = useCallback(() => {
+    const userId = session?.user?.id || 'anonymous';
+    return `batchCheckState_${userId}`;
+  }, [session?.user?.id]);
+
   // Restore batch state on mount (for refresh support)
   useEffect(() => {
-    const savedState = localStorage.getItem(BATCH_STATE_KEY);
+    if (!session?.user?.id) return; // Don't restore if no user
+
+    const savedState = localStorage.getItem(getBatchStateKey());
     if (savedState) {
       try {
         const state = JSON.parse(savedState);
@@ -74,10 +82,10 @@ export function useBatchCheck() {
         }
       } catch (error) {
         console.error('Error restoring batch state:', error);
-        localStorage.removeItem(BATCH_STATE_KEY);
+        localStorage.removeItem(getBatchStateKey());
       }
     }
-  }, []);
+  }, [getBatchStateKey, session?.user?.id]);
 
   // FIX: Cleanup on unmount to prevent memory leaks
   useEffect(() => {
@@ -89,23 +97,26 @@ export function useBatchCheck() {
       // Close SSE connection
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
+        eventSourceRef.current = null;
       }
     };
   }, []);
 
-  // Save batch state to localStorage
+  // Save batch state to localStorage (user-specific)
   const saveBatchState = useCallback(() => {
-    localStorage.setItem(BATCH_STATE_KEY, JSON.stringify({
+    if (!session?.user?.id) return; // Don't save if no user
+    localStorage.setItem(getBatchStateKey(), JSON.stringify({
       isProcessing,
       progress,
       stats,
+      timestamp: Date.now(), // Add timestamp for freshness check
     }));
-  }, [isProcessing, progress, stats]);
+  }, [isProcessing, progress, stats, getBatchStateKey, session?.user?.id]);
 
   // Clear batch state
   const clearBatchState = useCallback(() => {
-    localStorage.removeItem(BATCH_STATE_KEY);
-  }, []);
+    localStorage.removeItem(getBatchStateKey());
+  }, [getBatchStateKey]);
 
   // Reconnect to SSE after refresh
   const reconnectToSSE = useCallback(() => {
@@ -356,8 +367,18 @@ export function useBatchCheck() {
         batchUpdateTimer = setTimeout(flushUpdates, 1000); // Batch every 1 second
       };
 
-      // Connect to SSE for real-time updates
-      const eventSource = new EventSource('/api/automation/sse');
+      // Connect to SSE for real-time updates (reuse existing connection if available)
+      let eventSource = eventSourceRef.current;
+      let isNewConnection = false;
+
+      if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+        eventSource = new EventSource('/api/automation/sse');
+        eventSourceRef.current = eventSource;
+        isNewConnection = true;
+        console.log('📡 Created new SSE connection for batch');
+      } else {
+        console.log('♻️ Reusing existing SSE connection for batch');
+      }
 
       eventSource.addEventListener('result', (event) => {
         try {
@@ -396,10 +417,11 @@ export function useBatchCheck() {
           const data = JSON.parse(event.data);
           // Check if batch is complete
           if (data.stats.completed >= reviewIds.length) {
-            // Flush any remaining updates before closing
+            // Flush any remaining updates
             if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
             flushUpdates();
-            eventSource.close();
+            // DON'T close SSE - keep it alive for next batch
+            console.log('✅ Batch complete, keeping SSE connection alive');
             resolve(batchStats);
           }
         } catch (error) {
@@ -409,10 +431,15 @@ export function useBatchCheck() {
 
       eventSource.onerror = (error) => {
         console.error('SSE error:', error);
-        // Flush any remaining updates before closing
+        // Flush any remaining updates
         if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
         flushUpdates();
-        eventSource.close();
+
+        // Close and cleanup failed connection
+        if (eventSource === eventSourceRef.current) {
+          eventSource.close();
+          eventSourceRef.current = null;
+        }
 
         // Fallback: poll status endpoint
         pollBatchStatus(reviewIds.length, batchStats, onProgress, resolve, reject);
@@ -420,10 +447,11 @@ export function useBatchCheck() {
 
       // Timeout after 10 minutes per batch
       setTimeout(() => {
-        // Flush any remaining updates before closing
+        // Flush any remaining updates
         if (batchUpdateTimer) clearTimeout(batchUpdateTimer);
         flushUpdates();
-        eventSource.close();
+        // Timeout but don't close SSE
+        console.warn('⚠️ Batch timeout, but keeping SSE alive');
         reject(new Error('Batch processing timeout'));
       }, 600000);
     });

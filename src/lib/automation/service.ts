@@ -199,6 +199,15 @@ class AutomationService {
       console.log("=".repeat(80));
       console.log(`🎬 START CHECKS for user ${userId} (${reviewIds.length} reviews)${batchInfo}`);
 
+      // ISOLATION: Check if another user is already running
+      if (this.state.isChecking && this.state.userId && this.state.userId !== userId) {
+        console.log(`❌ REJECTED: User ${this.state.userId} is already running checks`);
+        return {
+          success: false,
+          message: `Another user is currently running checks. Please wait.`,
+        };
+      }
+
       // Fetch reviews from database
       const reviews = await prisma.review.findMany({
         where: {
@@ -292,9 +301,27 @@ class AutomationService {
   }
 
   /**
-   * Get queue stats with real-time counts
+   * Get queue stats with real-time counts (USER-ISOLATED)
    */
   getQueueStats(userId: string) {
+    // ISOLATION: Only return stats if user matches current checking user
+    if (this.state.userId && this.state.userId !== userId) {
+      // Different user is running - return empty stats
+      return {
+        pending: 0,
+        processing: 0,
+        completed: 0,
+        total: 0,
+        liveCount: 0,
+        missingCount: 0,
+        errorCount: 0,
+        isStopped: true,
+        progress: 0,
+        message: 'Another user is currently running checks',
+      };
+    }
+
+    // Return actual stats for current user
     return {
       pending: this.state.queue.length,
       processing: this.state.activeThreads,
