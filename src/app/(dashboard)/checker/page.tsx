@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, lazy, Suspense, useRef } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { useDebounce } from "use-debounce";
+import InfiniteScroll from "react-infinite-scroll-component";
 import {
     Activity,
     CheckCircle2,
@@ -41,7 +42,6 @@ import {
 import { CheckStatusBadge } from "@/components/reviews/check-status-badge";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useBatchCheck } from "@/hooks/use-batch-check";
-import { VirtualizedReviewList } from "@/components/reviews/virtualized-review-list";
 
 // PERFORMANCE: Lazy load heavy components (40% faster initial load)
 // These components are only loaded when needed
@@ -184,15 +184,14 @@ function ReviewActionButtons({
 export default function CheckerPage() {
     const dispatch = useAppDispatch();
     const { items: allReviews, meta, loading } = useAppSelector((state) => state.reviews);
-    const loadMoreButtonRef = useRef<HTMLDivElement>(null);
 
     const searchParams = useSearchParams();
 
     // Read checkStatus from URL if coming from dashboard
     const urlCheckStatus = searchParams.get("checkStatus");
 
-    // LAZY LOAD: Load 20 reviews at a time
-    const [displayedCount, setDisplayedCount] = useState(20);
+    // INFINITE SCROLL: Load 100 reviews at a time
+    const [displayedCount, setDisplayedCount] = useState(100);
     const [statusFilter, setStatusFilter] = useState("not-PENDING");
     const [checkStatusFilter, setCheckStatusFilter] = useState(urlCheckStatus || "all");
     const [profileFilter, setProfileFilter] = useState("all");
@@ -265,12 +264,12 @@ export default function CheckerPage() {
         return true;
     });
 
-    // LAZY LOAD: Only display first N reviews
+    // INFINITE SCROLL: Display first N reviews
     const displayedReviews = allFilteredReviews.slice(0, displayedCount);
 
-    // Load More function
+    // Load More function for infinite scroll - 100 items at a time
     const loadMore = useCallback(() => {
-        setDisplayedCount(prev => Math.min(prev + 20, allFilteredReviews.length));
+        setDisplayedCount(prev => Math.min(prev + 100, allFilteredReviews.length));
     }, [allFilteredReviews.length]);
 
     // Check if we have more reviews to load
@@ -318,7 +317,7 @@ export default function CheckerPage() {
     // Clear selection and reset displayed count when filters change
     useEffect(() => {
         setSelectedIds([]);
-        setDisplayedCount(20); // Reset to show first 20
+        setDisplayedCount(100); // Reset to show first 100
     }, [statusFilter, checkStatusFilter, profileFilter, debouncedSearch, debouncedEmailSearch, showArchived]);
 
     useEffect(() => {
@@ -741,7 +740,7 @@ export default function CheckerPage() {
                 </div>
             )}
 
-            {/* Reviews List - PROFILE PAGE STYLE */}
+            {/* Reviews List - INFINITE SCROLL */}
             {/* OPTIMIZATION: Hide review list during checking to save RAM */}
             {isChecking ? (
                 <Card className="bg-slate-800/30 border-slate-700">
@@ -765,223 +764,25 @@ export default function CheckerPage() {
                         <p className="text-slate-400 font-medium">No reviews found</p>
                     </CardContent>
                 </Card>
-            ) : displayedReviews.length > 200 ? (
-                // OPTIMIZATION: Use virtual scrolling for very large lists (>200 items)
-                // This renders only visible items, reducing DOM nodes from 1000+ to ~20
-                // For <200 items, use normal scrolling for better UX
-                <VirtualizedReviewList
-                    reviews={displayedReviews}
-                    itemHeight={150}
+            ) : (
+                // INFINITE SCROLL: Auto-load 100 items at a time
+                <InfiniteScroll
+                    dataLength={displayedReviews.length}
+                    next={loadMore}
                     hasMore={hasMore}
-                    loadMoreButton={
-                        <div className="flex justify-center">
-                            <Button
-                                onClick={loadMore}
-                                variant="outline"
-                                className="border-indigo-500 text-indigo-400 hover:bg-indigo-500/10"
-                                disabled={isLoading}
-                            >
-                                {isLoading ? (
-                                    <>
-                                        <Loader2 size={16} className="mr-2 animate-spin" />
-                                        Loading...
-                                    </>
-                                ) : (
-                                    <>
-                                        Load More ({allFilteredReviews.length - displayedCount} remaining)
-                                    </>
-                                )}
-                            </Button>
+                    loader={
+                        <div className="text-center py-4 text-slate-400 text-sm">
+                            <Loader2 className="inline-block mr-2 h-4 w-4 animate-spin" />
+                            Loading more reviews...
                         </div>
                     }
-                    renderItem={(review) => {
-                        const isSelected = selectedIds.includes(review.id);
-                        const isLiveOrDone = review.status === "LIVE" || review.status === "DONE";
-
-                        return (
-                            <Card
-                                key={review.id}
-                                className={`transition-colors ${isLocked(review.id)
-                                    ? "border-amber-500/30 bg-amber-500/5 opacity-75"
-                                    : `border-slate-700 hover:bg-slate-800/70 ${isSelected ? "ring-2 ring-indigo-500 bg-indigo-600/10" : "bg-slate-800/50"}`
-                                    }`}
-                            >
-                                <CardContent className="p-4">
-                                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                                            <Checkbox
-                                                checked={isSelected}
-                                                onCheckedChange={() => toggleSelection(review.id)}
-                                                className="mt-1 border-slate-500"
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                                    <h3 className="font-medium text-white truncate">
-                                                        {review.profile.businessName}
-                                                    </h3>
-                                                    {review.profile.client && (
-                                                        <span className="text-slate-500 text-xs">
-                                                            by {review.profile.client.name}
-                                                        </span>
-                                                    )}
-                                                    {review.profile.category && (
-                                                        <Badge
-                                                            variant="outline"
-                                                            className="border-slate-600 text-slate-400 text-xs"
-                                                        >
-                                                            {review.profile.category}
-                                                        </Badge>
-                                                    )}
-                                                    {/* Attribution */}
-                                                    {review.status === "LIVE" && (review.liveBy?.name || review.updatedBy?.name) ? (
-                                                        <span className="text-green-400 text-xs font-medium">
-                                                            Live by {review.liveBy?.name || review.updatedBy?.name}
-                                                        </span>
-                                                    ) : review.status === "APPLIED" && review.updatedBy ? (
-                                                        <span className="text-purple-400 text-xs font-medium">
-                                                            Applied by {review.updatedBy.name}
-                                                        </span>
-                                                    ) : review.createdBy ? (
-                                                        <span className="text-slate-500 text-xs">
-                                                            Created by {review.createdBy.name}
-                                                        </span>
-                                                    ) : null}
-                                                    {review.isArchived && (
-                                                        <Badge variant="outline" className="text-amber-400 border-amber-400/50 text-xs">
-                                                            Archived
-                                                        </Badge>
-                                                    )}
-                                                    {/* Check Status Badge */}
-                                                    <CheckStatusBadge
-                                                        checkStatus={review.checkStatus || null}
-                                                        lastCheckedAt={review.lastCheckedAt || null}
-                                                        screenshotPath={review.screenshotPath || null}
-                                                    />
-                                                </div>
-                                                {review.reviewText ? (
-                                                    <p className="text-sm text-slate-400 line-clamp-2">
-                                                        {review.reviewText}
-                                                    </p>
-                                                ) : (
-                                                    <p className="text-sm text-slate-500 italic flex items-center gap-2">
-                                                        <Sparkles size={14} />
-                                                        No review text yet - click edit to add or generate
-                                                    </p>
-                                                )}
-
-                                                {/* Meta info */}
-                                                <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-slate-500">
-                                                    {review.dueDate && (
-                                                        <span className="flex items-center gap-1">
-                                                            <Clock size={12} />
-                                                            Due: {format(new Date(review.dueDate), "MMM d, yyyy")}
-                                                        </span>
-                                                    )}
-                                                    {review.emailUsed && (
-                                                        <span
-                                                            className="flex items-center gap-1 text-indigo-400 cursor-pointer hover:text-indigo-300 transition-colors"
-                                                            onClick={() => copyToClipboard(review.emailUsed!, "Email")}
-                                                        >
-                                                            <Mail size={12} />
-                                                            {review.emailUsed}
-                                                        </span>
-                                                    )}
-                                                    {review.status === "DONE" && review.completedAt && (
-                                                        <span className="flex items-center gap-1 text-emerald-400">
-                                                            <Calendar size={12} />
-                                                            Completed: {format(new Date(review.completedAt), "MMM d, yyyy")}
-                                                        </span>
-                                                    )}
-                                                    {isLiveOrDone && review.reviewLiveLink && (
-                                                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">
-                                                            Live Review
-                                                        </Badge>
-                                                    )}
-                                                    {review.notes && (
-                                                        <span className="text-slate-500 truncate max-w-[200px]">
-                                                            Note: {review.notes}
-                                                        </span>
-                                                    )}
-                                                    {/* Lock Indicator */}
-                                                    {getLock(review.id) && (
-                                                        <Badge variant="outline" className="text-amber-500 border-amber-500/50 bg-amber-500/10 gap-1 pl-1 pr-2">
-                                                            <Lock size={10} />
-                                                            {getLock(review.id)?.userId === currentUser?.id
-                                                                ? "Editing by You"
-                                                                : `Locked by ${getLock(review.id)?.username}`}
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Actions - PROFILE PAGE STYLE */}
-                                        <div className="flex items-center gap-2">
-                                            <ReviewActionButtons
-                                                reviewId={review.id}
-                                                gmbLink={review.profile.gmbLink}
-                                                reviewLiveLink={review.reviewLiveLink}
-                                                reviewText={review.reviewText}
-                                                status={review.status}
-                                                isLocked={isLocked(review.id)}
-                                                lockedBy={getLock(review.id)?.username}
-                                                onAction={() => acquireLock(review.id)}
-                                            />
-
-                                            {/* Edit Button */}
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    if (isLocked(review.id)) {
-                                                        toast.error(`Locked by ${getLock(review.id)?.username}`);
-                                                        return;
-                                                    }
-                                                    acquireLock(review.id);
-                                                    handleEditReview(review);
-                                                }}
-                                                className={`h-9 px-3 ${isLocked(review.id) ? "text-slate-600 cursor-not-allowed" : "text-slate-400 hover:text-white"}`}
-                                                title={isLocked(review.id) ? `Locked by ${getLock(review.id)?.username}` : "Edit Review"}
-                                                disabled={isLocked(review.id)}
-                                            >
-                                                <Pencil size={14} />
-                                            </Button>
-
-                                            {/* Status Dropdown - PROFILE PAGE STYLE (optimistic) */}
-                                            <Select
-                                                value={review.status}
-                                                onValueChange={(val) => handleStatusChange(review.id, val)}
-                                                disabled={isLocked(review.id)}
-                                            >
-                                                <SelectTrigger
-                                                    className={`w-[140px] ${statusConfig[review.status]?.color || "bg-slate-600"} border-0 text-white font-medium transition-all duration-300`}
-                                                >
-                                                    <span className="flex items-center gap-2">
-                                                        {statusConfig[review.status]?.icon}
-                                                        {statusConfig[review.status]?.label || review.status}
-                                                    </span>
-                                                </SelectTrigger>
-                                                <SelectContent position="popper" className="bg-slate-800 border-slate-700">
-                                                    {Object.entries(statusConfig).map(([key, config]) => (
-                                                        <SelectItem key={key} value={key}>
-                                                            <span className="flex items-center gap-2">
-                                                                {config.icon}
-                                                                {config.label}
-                                                            </span>
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        );
-                    }}
-                />
-            ) : (
-                // LAZY LOAD: Render only displayed reviews
-                <div className="space-y-3">
+                    endMessage={
+                        <div className="text-center py-4 text-slate-500 text-sm">
+                            ✓ All {allFilteredReviews.length} reviews loaded
+                        </div>
+                    }
+                    className="space-y-3"
+                >
                     {displayedReviews.map((review) => {
                         const isSelected = selectedIds.includes(review.id);
                         const isLiveOrDone = review.status === "LIVE" || review.status === "DONE";
@@ -1166,30 +967,7 @@ export default function CheckerPage() {
                             </Card>
                         );
                     })}
-                </div>
-            )}
-
-            {/* Load More Button */}
-            {hasMore && !isChecking && (
-                <div ref={loadMoreButtonRef} className="mt-6 flex justify-center">
-                    <Button
-                        onClick={loadMore}
-                        variant="outline"
-                        className="border-indigo-500 text-indigo-400 hover:bg-indigo-500/10"
-                        disabled={isLoading}
-                    >
-                        {isLoading ? (
-                            <>
-                                <Loader2 size={16} className="mr-2 animate-spin" />
-                                Loading...
-                            </>
-                        ) : (
-                            <>
-                                Load More ({allFilteredReviews.length - displayedCount} remaining)
-                            </>
-                        )}
-                    </Button>
-                </div>
+                </InfiniteScroll>
             )}
 
             {/* UNIFIED POPUP: Single popup for ALL checks (small or large) */}
