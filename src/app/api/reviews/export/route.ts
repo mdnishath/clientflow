@@ -1,7 +1,20 @@
 /**
  * Reviews Export API
  *
- * GET /api/reviews/export?filter=all|live|missing|error
+ * GET /api/reviews/export
+ *
+ * Query Parameters:
+ * - filter: all|live|missing|error (legacy, use checkStatus instead)
+ * - status: PENDING|APPLIED|LIVE|etc. (review status)
+ * - checkStatus: LIVE|MISSING|ERROR|NOT_CHECKED (check status)
+ * - profileId: specific profile ID
+ * - clientId: specific client ID
+ * - category: specific category
+ * - dueDate: all|today
+ * - emailSearch: search by email
+ * - search: text search (reviews, emails, business names)
+ * - archived: true|false
+ * - ids: comma-separated review IDs (for selected export)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -20,16 +33,42 @@ export async function GET(request: NextRequest) {
     // Get filter from query params
     const searchParams = request.nextUrl.searchParams;
     const filter = searchParams.get("filter") || "all";
-    const statusFilter = searchParams.get("status") || "all";
+    const statusFilter = searchParams.get("status");
+    const checkStatusFilter = searchParams.get("checkStatus");
+    const profileIdFilter = searchParams.get("profileId");
+    const clientIdFilter = searchParams.get("clientId");
+    const categoryFilter = searchParams.get("category");
+    const dueDateFilter = searchParams.get("dueDate");
+    const emailSearch = searchParams.get("emailSearch");
+    const textSearch = searchParams.get("search");
+    const archivedParam = searchParams.get("archived");
+    const idsParam = searchParams.get("ids");
 
     // Build where clause
     const where: any = {
       userId: session.user.id,
-      isArchived: false,
     };
 
-    // Apply check status filter
-    if (filter !== "all") {
+    // Handle archived filter
+    if (archivedParam === "true") {
+      where.isArchived = true;
+    } else {
+      where.isArchived = false;
+    }
+
+    // Handle selected IDs export
+    if (idsParam) {
+      const ids = idsParam.split(",").filter(Boolean);
+      if (ids.length > 0) {
+        where.id = { in: ids };
+      }
+    }
+
+    // Apply check status filter (new parameter takes priority)
+    if (checkStatusFilter && checkStatusFilter !== "all") {
+      where.checkStatus = checkStatusFilter;
+    } else if (filter !== "all") {
+      // Backward compatibility with old filter parameter
       const filterMap: Record<string, string> = {
         live: "LIVE",
         missing: "MISSING",
@@ -39,8 +78,59 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply review status filter
-    if (statusFilter !== "all") {
+    if (statusFilter && statusFilter !== "all") {
       where.status = statusFilter;
+    }
+
+    // Apply profile filter
+    if (profileIdFilter && profileIdFilter !== "all") {
+      where.profileId = profileIdFilter;
+    }
+
+    // Apply client filter
+    if (clientIdFilter && clientIdFilter !== "all") {
+      where.profile = {
+        clientId: clientIdFilter,
+      };
+    }
+
+    // Apply category filter
+    if (categoryFilter && categoryFilter !== "all") {
+      where.profile = {
+        ...where.profile,
+        category: categoryFilter,
+      };
+    }
+
+    // Apply email search
+    if (emailSearch) {
+      where.emailUsed = {
+        contains: emailSearch,
+        mode: "insensitive",
+      };
+    }
+
+    // Apply text search
+    if (textSearch) {
+      where.OR = [
+        { reviewText: { contains: textSearch, mode: "insensitive" } },
+        { emailUsed: { contains: textSearch, mode: "insensitive" } },
+        { profile: { businessName: { contains: textSearch, mode: "insensitive" } } },
+      ];
+    }
+
+    // Apply due date filter
+    if (dueDateFilter && dueDateFilter !== "all") {
+      if (dueDateFilter === "today") {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        where.dueDate = {
+          gte: today,
+          lt: tomorrow,
+        };
+      }
     }
 
     // Fetch reviews
