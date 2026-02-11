@@ -215,7 +215,8 @@ export default function ReportsPage() {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `Overview_Report_${new Date().toISOString().split("T")[0]}.xlsx`;
+            const ext = format === "pdf" ? "pdf" : "xlsx";
+            a.download = `Overview_Report_${new Date().toISOString().split("T")[0]}.${ext}`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -228,16 +229,17 @@ export default function ReportsPage() {
         }
     };
 
-    const handleExportPerformance = async () => {
+    const handleExportPerformance = async (format: string) => {
         try {
-            const response = await fetch("/api/reports/performance/export");
+            const response = await fetch(`/api/reports/performance/export?format=${format}`);
             if (!response.ok) throw new Error("Export failed");
 
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `Worker_Performance_${new Date().toISOString().split("T")[0]}.xlsx`;
+            const ext = format === "pdf" ? "pdf" : "xlsx";
+            a.download = `Worker_Performance_${new Date().toISOString().split("T")[0]}.${ext}`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -247,6 +249,31 @@ export default function ReportsPage() {
         } catch (error) {
             console.error("Export error:", error);
             toast.error("Failed to export performance report");
+        }
+    };
+
+    const handleExportClients = async (format: string) => {
+        try {
+            const response = await fetch(
+                `/api/reports/clients/export?format=${format}&from=${dateRange.from}&to=${dateRange.to}`
+            );
+            if (!response.ok) throw new Error("Export failed");
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            const ext = format === "pdf" ? "pdf" : "xlsx";
+            a.download = `Client_Rankings_${new Date().toISOString().split("T")[0]}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            toast.success("Client rankings exported!");
+        } catch (error) {
+            console.error("Export error:", error);
+            toast.error("Failed to export client rankings");
         }
     };
 
@@ -322,7 +349,7 @@ export default function ReportsPage() {
                         icon={<BarChart3 className="text-indigo-400" size={20} />}
                         onExport={handleExportOverview}
                         onRefresh={handleRefresh}
-                        exportFormats={["excel"]}
+                        exportFormats={["excel", "pdf"]}
                         loading={loading}
                     >
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -373,7 +400,7 @@ export default function ReportsPage() {
                         description="Track individual worker productivity and quality"
                         icon={<Users className="text-blue-400" size={20} />}
                         onExport={handleExportPerformance}
-                        exportFormats={["excel"]}
+                        exportFormats={["excel", "pdf"]}
                     >
                         {workers.length === 0 ? (
                             <div className="text-center py-12 text-slate-400">
@@ -425,8 +452,8 @@ export default function ReportsPage() {
                         title="Client Performance Ranking"
                         description="Top performing clients by review volume and success rate"
                         icon={<Users className="text-purple-400" size={20} />}
-                        onExport={() => toast.success("Exporting client report...")}
-                        exportFormats={["excel"]}
+                        onExport={handleExportClients}
+                        exportFormats={["excel", "pdf"]}
                     >
                         {clients.length === 0 ? (
                             <div className="text-center py-12 text-slate-400">
@@ -472,8 +499,8 @@ export default function ReportsPage() {
                         title="Profile Progress Report"
                         description="Track completion status across all profiles"
                         icon={<PieChart className="text-pink-400" size={20} />}
-                        onExport={() => {
-                            window.open("/api/reports/profile-progress/export?format=excel", "_blank");
+                        onExport={(format) => {
+                            window.open(`/api/reports/profile-progress/export?format=${format}`, "_blank");
                         }}
                         exportFormats={["excel", "pdf"]}
                     >

@@ -8,6 +8,8 @@ import { getClientScope } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 import { subDays } from "date-fns";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,6 +23,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const searchParams = request.nextUrl.searchParams;
+    const format = searchParams.get("format") || "excel";
     const last30Days = subDays(new Date(), 30);
 
     // Get all unique workers who have made reviews live
@@ -122,36 +126,87 @@ export async function GET(request: NextRequest) {
     // Sort by total live reviews
     workerStats.sort((a, b) => b["Total Live Reviews"] - a["Total Live Reviews"]);
 
-    // Create workbook
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.json_to_sheet(workerStats);
+    if (format === "pdf") {
+      // Generate PDF
+      const doc = new jsPDF();
 
-    // Set column widths
-    worksheet["!cols"] = [
-      { wch: 25 }, // Worker Name
-      { wch: 30 }, // Email
-      { wch: 18 }, // Total Live Reviews
-      { wch: 15 }, // Current Live
-      { wch: 15 }, // Last 30 Days
-      { wch: 18 }, // Reviews Created
-      { wch: 20 }, // Avg Completion
-      { wch: 18 }, // Performance Score
-    ];
+      doc.setFontSize(20);
+      doc.text("Worker Performance Report", 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 28);
 
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Worker Performance");
+      autoTable(doc, {
+        startY: 35,
+        head: [
+          [
+            "Worker Name",
+            "Email",
+            "Total Live",
+            "Current Live",
+            "Last 30 Days",
+            "Created",
+            "Avg Days",
+            "Score",
+          ],
+        ],
+        body: workerStats.map((w) => [
+          w["Worker Name"],
+          w.Email,
+          w["Total Live Reviews"],
+          w["Current Live"],
+          w["Last 30 Days"],
+          w["Reviews Created"],
+          w["Avg Completion (days)"],
+          w["Performance Score"] + "%",
+        ]),
+        theme: "striped",
+        headStyles: { fillColor: [79, 70, 229] },
+        styles: { fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 30 },
+          1: { cellWidth: 40 },
+        },
+      });
 
-    // Generate buffer
-    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
+      const filename = `Worker_Performance_${new Date().toISOString().split("T")[0]}.pdf`;
 
-    const filename = `Worker_Performance_${new Date().toISOString().split("T")[0]}.xlsx`;
+      return new NextResponse(pdfBuffer, {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
+    } else {
+      // Generate Excel
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(workerStats);
 
-    return new NextResponse(buffer, {
-      headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
+      // Set column widths
+      worksheet["!cols"] = [
+        { wch: 25 },
+        { wch: 30 },
+        { wch: 18 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 18 },
+        { wch: 20 },
+        { wch: 18 },
+      ];
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Worker Performance");
+
+      const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      const filename = `Worker_Performance_${new Date().toISOString().split("T")[0]}.xlsx`;
+
+      return new NextResponse(buffer, {
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
+    }
   } catch (error) {
     console.error("Export error:", error);
     return NextResponse.json(

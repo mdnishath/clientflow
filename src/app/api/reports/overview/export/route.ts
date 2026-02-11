@@ -8,6 +8,8 @@ import { getClientScope } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 import { subDays } from "date-fns";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export async function GET(request: NextRequest) {
   try {
@@ -110,31 +112,79 @@ export async function GET(request: NextRequest) {
       { Status: "DONE", Count: statusCounts["DONE"] || 0 },
     ];
 
-    // Create workbook
-    const workbook = XLSX.utils.book_new();
+    if (format === "pdf") {
+      // Generate PDF
+      const doc = new jsPDF();
 
-    // Overview sheet
-    const overviewSheet = XLSX.utils.json_to_sheet(overviewData);
-    overviewSheet["!cols"] = [{ wch: 25 }, { wch: 15 }, { wch: 30 }];
-    XLSX.utils.book_append_sheet(workbook, overviewSheet, "Overview");
+      // Title
+      doc.setFontSize(20);
+      doc.text("Overview Report", 14, 20);
+      doc.setFontSize(10);
+      doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 28);
 
-    // Status breakdown sheet
-    const statusSheet = XLSX.utils.json_to_sheet(statusBreakdown);
-    statusSheet["!cols"] = [{ wch: 20 }, { wch: 15 }];
-    XLSX.utils.book_append_sheet(workbook, statusSheet, "Status Breakdown");
+      // KPI Metrics Table
+      doc.setFontSize(14);
+      doc.text("Key Performance Indicators", 14, 40);
 
-    // Generate buffer
-    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      autoTable(doc, {
+        startY: 45,
+        head: [["Metric", "Value", "Details"]],
+        body: overviewData.map((row) => [row.Metric, row.Value.toString(), row.Change]),
+        theme: "striped",
+        headStyles: { fillColor: [79, 70, 229] }, // Indigo
+        styles: { fontSize: 10 },
+      });
 
-    const filename = `Overview_Report_${new Date().toISOString().split("T")[0]}.xlsx`;
+      // Status Breakdown Table
+      const finalY = (doc as any).lastAutoTable.finalY || 100;
+      doc.setFontSize(14);
+      doc.text("Status Breakdown", 14, finalY + 15);
 
-    return new NextResponse(buffer, {
-      headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
+      autoTable(doc, {
+        startY: finalY + 20,
+        head: [["Status", "Count"]],
+        body: statusBreakdown.map((row) => [row.Status, row.Count.toString()]),
+        theme: "striped",
+        headStyles: { fillColor: [79, 70, 229] },
+        styles: { fontSize: 10 },
+      });
+
+      const pdfBuffer = Buffer.from(doc.output("arraybuffer"));
+      const filename = `Overview_Report_${new Date().toISOString().split("T")[0]}.pdf`;
+
+      return new NextResponse(pdfBuffer, {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
+    } else {
+      // Generate Excel
+      const workbook = XLSX.utils.book_new();
+
+      // Overview sheet
+      const overviewSheet = XLSX.utils.json_to_sheet(overviewData);
+      overviewSheet["!cols"] = [{ wch: 25 }, { wch: 15 }, { wch: 30 }];
+      XLSX.utils.book_append_sheet(workbook, overviewSheet, "Overview");
+
+      // Status breakdown sheet
+      const statusSheet = XLSX.utils.json_to_sheet(statusBreakdown);
+      statusSheet["!cols"] = [{ wch: 20 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(workbook, statusSheet, "Status Breakdown");
+
+      // Generate buffer
+      const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+      const filename = `Overview_Report_${new Date().toISOString().split("T")[0]}.xlsx`;
+
+      return new NextResponse(buffer, {
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
+    }
   } catch (error) {
     console.error("Export error:", error);
     return NextResponse.json(
