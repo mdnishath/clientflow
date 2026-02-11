@@ -98,47 +98,50 @@ export function VirtualizedReviewList({
     return reviews.slice(visibleStart, visibleEnd);
   }, [reviews, visibleStart, visibleEnd]);
 
-  const totalHeight = reviews.length * itemHeight + (hasMore ? 100 : 0); // Add extra space for load more button
+  const totalHeight = reviews.length * itemHeight + (hasMore ? 120 : 0); // Add extra space for load more button
 
   return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      className="h-[calc(100vh-400px)] overflow-y-auto"
-      style={{ position: "relative" }}
-    >
-      {/* Spacer for total height */}
-      <div style={{ height: totalHeight, position: "relative" }}>
-        {/* Visible items */}
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            transform: `translateY(${offsetY}px)`,
-          }}
-        >
-          <div className="space-y-3">
-            {visibleReviews.map((review, idx) =>
-              renderItem(review, visibleStart + idx)
-            )}
-          </div>
-        </div>
-        {/* Load More Button at the end */}
-        {hasMore && loadMoreButton && (
+    <div style={{ position: "relative" }}>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="h-[calc(100vh-400px)] overflow-y-auto"
+        style={{ position: "relative" }}
+      >
+        {/* Spacer for total height */}
+        <div style={{ height: totalHeight, position: "relative" }}>
+          {/* Visible items */}
           <div
             style={{
               position: "absolute",
-              top: reviews.length * itemHeight,
+              top: 0,
               left: 0,
               right: 0,
-              padding: "1.5rem 0",
+              transform: `translateY(${offsetY}px)`,
             }}
           >
-            {loadMoreButton}
+            <div className="space-y-3">
+              {visibleReviews.map((review, idx) =>
+                renderItem(review, visibleStart + idx)
+              )}
+            </div>
           </div>
-        )}
+          {/* Load More Button at the end of list */}
+          {hasMore && loadMoreButton && (
+            <div
+              style={{
+                position: "absolute",
+                top: reviews.length * itemHeight,
+                left: 0,
+                right: 0,
+                padding: "1.5rem 0",
+                zIndex: 10,
+              }}
+            >
+              {loadMoreButton}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
