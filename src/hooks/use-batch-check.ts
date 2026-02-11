@@ -195,8 +195,9 @@ export function useBatchCheck() {
 
     eventSource.addEventListener('stats', (event) => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.stats.completed >= progress.totalReviews || data.stats.pending + data.stats.processing === 0) {
+        const stats = JSON.parse(event.data);
+        // Backend sends unwrapped stats object directly
+        if (stats.completed >= progress.totalReviews || stats.pending + stats.processing === 0) {
           eventSource.close();
           setIsProcessing(false);
           clearBatchState();
@@ -360,8 +361,8 @@ export function useBatchCheck() {
 
       eventSource.addEventListener('stats', (event) => {
         try {
-          const data = JSON.parse(event.data);
-          const backendStats = data.stats;
+          // Backend sends unwrapped stats object directly
+          const backendStats = JSON.parse(event.data);
 
           // Update progress based on backend stats
           const overallProgress = Math.round((backendStats.completed / totalReviews) * 100);
@@ -545,10 +546,11 @@ export function useBatchCheck() {
 
       eventSource.addEventListener('stats', (event) => {
         try {
-          const data = JSON.parse(event.data);
+          // Backend sends unwrapped stats object directly
+          const backendStats = JSON.parse(event.data);
           // Check if batch is complete (queue empty AND no active threads)
-          const isComplete = data.stats.completed >= reviewIds.length ||
-              (data.stats.pending === 0 && data.stats.processing === 0 && processedCount > 0);
+          const isComplete = backendStats.completed >= reviewIds.length ||
+              (backendStats.pending === 0 && backendStats.processing === 0 && processedCount > 0);
 
           if (isComplete) {
             // Flush any remaining updates
