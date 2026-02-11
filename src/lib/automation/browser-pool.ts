@@ -79,28 +79,33 @@ export class BrowserPool {
      * Return browser to pool after use
      */
     async returnBrowser(browser: Browser) {
-        const pooled = this.pool.find((pb) => pb.browser === browser);
+        try {
+            const pooled = this.pool.find((pb) => pb.browser === browser);
 
-        if (pooled) {
-            pooled.inUse = false;
-            pooled.lastUsed = Date.now();
-            pooled.contextCount++;
+            if (pooled) {
+                pooled.inUse = false;
+                pooled.lastUsed = Date.now();
+                pooled.contextCount++;
 
-            // If browser has too many contexts, close it to prevent memory leaks
-            if (pooled.contextCount >= this.maxContextsPerBrowser) {
-                console.log(`🧹 Closing browser (too many contexts: ${pooled.contextCount})`);
-                await this.removeBrowser(pooled);
+                // If browser has too many contexts, close it to prevent memory leaks
+                if (pooled.contextCount >= this.maxContextsPerBrowser) {
+                    console.log(`🧹 Closing browser (too many contexts: ${pooled.contextCount})`);
+                    await this.removeBrowser(pooled);
+                } else {
+                    console.log(`✅ Browser returned to pool (contexts: ${pooled.contextCount})`);
+                }
             } else {
-                console.log(`✅ Browser returned to pool (contexts: ${pooled.contextCount})`);
+                // Browser not in pool, close it
+                console.log(`🔒 Closing non-pooled browser`);
+                try {
+                    await browser.close();
+                } catch (e) {
+                    // Browser already closed - ignore ECONNRESET
+                }
             }
-        } else {
-            // Browser not in pool, close it
-            console.log(`🔒 Closing non-pooled browser`);
-            try {
-                await browser.close();
-            } catch (e) {
-                // Browser already closed
-            }
+        } catch (error) {
+            // Catch any ECONNRESET or connection errors during return
+            console.error('Error returning browser to pool:', error instanceof Error ? error.message : 'Unknown error');
         }
     }
 
@@ -108,33 +113,50 @@ export class BrowserPool {
      * Launch a new browser with optimized settings
      */
     private async launchBrowser(): Promise<Browser> {
-        return await chromium.launch({
-            headless: true,
-            args: [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-web-security",
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--disable-dev-shm-usage",
-                "--no-first-run",
-                "--no-default-browser-check",
-                // Performance optimizations
-                "--disable-gpu",
-                "--disable-software-rasterizer",
-                "--disable-extensions",
-                "--disable-plugins",
-                "--disable-background-networking",
-                "--disable-default-apps",
-                "--disable-sync",
-                "--metrics-recording-only",
-                "--mute-audio",
-                "--safebrowsing-disable-auto-update",
-                "--disable-client-side-phishing-detection",
-                "--disable-component-update",
-                "--disable-domain-reliability",
-            ],
-        });
+        try {
+            const browser = await chromium.launch({
+                headless: true,
+                args: [
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-web-security",
+                    "--disable-features=IsolateOrigins,site-per-process",
+                    "--disable-dev-shm-usage",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    // Performance optimizations
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                    "--disable-extensions",
+                    "--disable-plugins",
+                    "--disable-background-networking",
+                    "--disable-default-apps",
+                    "--disable-sync",
+                    "--metrics-recording-only",
+                    "--mute-audio",
+                    "--safebrowsing-disable-auto-update",
+                    "--disable-client-side-phishing-detection",
+                    "--disable-component-update",
+                    "--disable-domain-reliability",
+                ],
+            });
+
+            // Handle browser disconnection
+            browser.on('disconnected', () => {
+                console.log('🔌 Browser disconnected (cleaning from pool)');
+                // Remove from pool if disconnected
+                const pooled = this.pool.find((pb) => pb.browser === browser);
+                if (pooled) {
+                    this.pool = this.pool.filter((pb) => pb !== pooled);
+                }
+            });
+
+            return browser;
+        } catch (error) {
+            console.error('Failed to launch browser:', error instanceof Error ? error.message : 'Unknown error');
+            throw error;
+        }
     }
 
     /**
@@ -163,9 +185,15 @@ export class BrowserPool {
     private async removeBrowser(pooled: PooledBrowser) {
         this.pool = this.pool.filter((pb) => pb !== pooled);
         try {
-            await pooled.browser.close();
+            // Close browser with timeout to prevent hanging
+            const closePromise = pooled.browser.close();
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Browser close timeout')), 5000)
+            );
+            await Promise.race([closePromise, timeoutPromise]);
         } catch (e) {
-            // Already closed
+            // Already closed or ECONNRESET - safe to ignore
+            console.log('Browser close error (ignored):', e instanceof Error ? e.message : 'Unknown');
         }
     }
 
@@ -175,13 +203,21 @@ export class BrowserPool {
     async closeAll() {
         console.log(`🛑 Closing all browsers in pool (${this.pool.length})`);
 
-        for (const pooled of this.pool) {
-            try {
-                await pooled.browser.close();
-            } catch (e) {
-                // Already closed
-            }
-        }
+        // Close all browsers concurrently with error handling
+        await Promise.allSettled(
+            this.pool.map(async (pooled) => {
+                try {
+                    const closePromise = pooled.browser.close();
+                    const timeoutPromise = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error('Browser close timeout')), 5000)
+                    );
+                    await Promise.race([closePromise, timeoutPromise]);
+                } catch (e) {
+                    // Already closed or ECONNRESET - safe to ignore
+                    console.log('Browser close error (ignored):', e instanceof Error ? e.message : 'Unknown');
+                }
+            })
+        );
 
         this.pool = [];
 

@@ -254,11 +254,23 @@ export class LiveChecker {
         checkedAt: new Date(),
       };
     } finally {
+      // Clean up page and context first to prevent memory leaks
+      try {
+        if (page) {
+          await page.close().catch((e) => {
+            console.log('Page close error (ignored):', e.message);
+          });
+        }
+      } catch (e) {
+        // Ignore page close errors
+      }
+
       // PERFORMANCE: Return browser to pool instead of closing
       // This allows browser reuse for next check (0s vs 2-3s launch time)
       if (browser) {
-        await browserPool.returnBrowser(browser).catch(() => {
-          // Ignore errors
+        await browserPool.returnBrowser(browser).catch((e) => {
+          // Ignore ECONNRESET and other connection errors
+          console.log('Browser return error (ignored):', e instanceof Error ? e.message : 'Unknown');
         });
       }
     }
