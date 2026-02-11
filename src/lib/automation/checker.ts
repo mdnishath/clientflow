@@ -90,16 +90,18 @@ export class LiveChecker {
 
       // Create context with maximum stealth settings
       const context = await browser.newContext({
-        viewport: { width: 1280, height: 900 },
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        viewport: { width: 1920, height: 1080 }, // More realistic resolution
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", // Latest Chrome
         locale: 'en-US',
         timezoneId: 'America/New_York',
-        // Add realistic browser features
         permissions: ['geolocation'],
-        geolocation: { latitude: 40.7128, longitude: -74.0060 }, // NYC coordinates
+        geolocation: { latitude: 40.7128, longitude: -74.0060 },
         colorScheme: 'light',
-        // Hide automation
         javaScriptEnabled: true,
+        // Extra stealth
+        hasTouch: false,
+        isMobile: false,
+        deviceScaleFactor: 1,
       });
 
       page = await context.newPage();
@@ -132,26 +134,8 @@ export class LiveChecker {
             : originalQuery(parameters);
       });
 
-      // CRITICAL: Don't block ANY resources for Google Maps to work properly
-      // Google Maps needs full access to render .Upo0Ec and other elements
-      // Performance is secondary to accuracy
-      await page.route("**/*", (route) => {
-        const resourceType = route.request().resourceType();
-
-        // Only block very large images to save bandwidth
-        if (resourceType === 'image') {
-          const url = route.request().url();
-          // Block large images but allow everything else
-          if (url.includes('googleusercontent') && url.includes('=w') && !url.includes('=w100')) {
-            route.abort(); // Block large photos
-          } else {
-            route.continue(); // Allow icons, logos, UI images
-          }
-        } else {
-          // Allow ALL other resources (CSS, JS, fonts, etc.)
-          route.continue();
-        }
-      });
+      // NO RESOURCE BLOCKING - Let Google Maps load completely
+      // This is critical for .Upo0Ec to render properly
 
       // BETTER APPROACH: Resolve short links first, then navigate
       let finalUrl = review.reviewLiveLink;
@@ -171,56 +155,33 @@ export class LiveChecker {
         }
       }
 
-      // Navigate with fallback strategies (ANTI-DETECTION)
-      console.log(`🌐 Navigating to review...`);
+      // SIMPLIFIED NAVIGATION - Direct approach
+      console.log(`🌐 Navigating to: ${finalUrl.substring(0, 80)}...`);
 
-      let navigationSuccess = false;
-
-      // OPTIMIZED: Aggressive fast navigation strategy
-      // Strategy 1: Try commit (fastest - just wait for navigation to start)
       try {
+        // Direct navigation with domcontentloaded
         await page.goto(finalUrl, {
-          waitUntil: "commit",
-          timeout: 15000, // OPTIMIZED: Reduced from 30s to 15s
+          waitUntil: "domcontentloaded",
+          timeout: 30000,
         });
-        // OPTIMIZED: Reduced wait from 2s to 1s
-        await page.waitForTimeout(1000);
-        navigationSuccess = true;
-        console.log(`✓ Navigation successful (commit)`);
-      } catch (error1) {
-        console.log(`⚠ Strategy 1 failed, trying fallback...`);
-
-        // Strategy 2: Try domcontentloaded (backup)
+        console.log(`✓ Navigation successful`);
+      } catch (error) {
+        // If navigation fails, try one more time with networkidle
+        console.log(`⚠ First navigation failed, retrying...`);
         try {
           await page.goto(finalUrl, {
-            waitUntil: "domcontentloaded",
-            timeout: 20000, // OPTIMIZED: Reduced from 30s to 20s
+            waitUntil: "load",
+            timeout: 30000,
           });
-          navigationSuccess = true;
-          console.log(`✓ Navigation successful (domcontentloaded fallback)`);
+          console.log(`✓ Navigation successful (retry)`);
         } catch (error2) {
-          console.log(`⚠ Strategy 2 failed, trying last resort...`);
-
-          // Strategy 3: Navigate without waiting (last resort)
-          try {
-            // Set content to blank first
-            await page.goto('about:blank');
-            // Now navigate without waiting
-            page.goto(finalUrl).catch(() => {}); // Fire and forget
-            // OPTIMIZED: Reduced wait from 5s to 3s
-            await page.waitForTimeout(3000);
-            navigationSuccess = true;
-            console.log(`✓ Navigation successful (no-wait fallback)`);
-          } catch (error3) {
-            const errorMessage = error1 instanceof Error ? error1.message : "Unknown error";
-            console.error(`❌ All navigation strategies failed: ${errorMessage.substring(0, 100)}`);
-            throw error1;
-          }
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          console.error(`❌ Navigation failed: ${errorMessage.substring(0, 100)}`);
+          throw error;
         }
       }
 
-      // OPTIMIZED: Removed extra wait - cookie consent handler already waits
-      // Handle cookie consent (if present)
+      // Handle cookie consent quickly
       await this.handleCookieConsent(page);
 
       // Extract ID from link for strict matching
@@ -356,63 +317,65 @@ export class LiveChecker {
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      console.log("🔍 CHECKING FOR .Upo0Ec (THE ONLY INDICATOR)...");
+      console.log("🔍 Checking for .Upo0Ec class...");
 
-      // Wait longer for Google Maps to fully load
-      console.log("⏳ Waiting for network to settle...");
-      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
-        console.log('⚠️ Network not idle after 15s, proceeding anyway');
+      // Wait for page to be fully loaded and interactive
+      console.log("⏳ Waiting for page load...");
+      await page.waitForLoadState('load', { timeout: 20000 }).catch(() => {
+        console.log('⚠️ Load timeout, checking anyway');
       });
 
-      // Additional wait for dynamic content to render
-      console.log("⏳ Waiting 3s for dynamic content...");
-      await page.waitForTimeout(3000);
+      // Wait for network activity to calm down
+      console.log("⏳ Waiting for network idle...");
+      await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {
+        console.log('⚠️ Network still active, checking anyway');
+      });
 
-      // Wait specifically for .Upo0Ec with longer timeout
-      console.log("🎯 Waiting for .Upo0Ec selector...");
+      // Extra wait for JavaScript to execute
+      console.log("⏳ Waiting 5s for JS execution...");
+      await page.waitForTimeout(5000);
+
+      // Log current state
+      const pageUrl = page.url();
+      const pageTitle = await page.title();
+      console.log(`📄 Title: ${pageTitle}`);
+      console.log(`🌐 URL: ${pageUrl.substring(0, 120)}`);
+
+      // Try to wait for .Upo0Ec specifically
+      console.log("🎯 Looking for .Upo0Ec...");
       const hasUpo0Ec = await page.waitForSelector(".Upo0Ec", {
-        timeout: 8000,
-        state: 'attached'
+        timeout: 10000,
+        state: 'visible'
       }).then(() => {
-        console.log("✅ .Upo0Ec FOUND!");
+        console.log("✅ .Upo0Ec FOUND (via waitForSelector)!");
         return true;
       }).catch(() => {
-        console.log("❌ .Upo0Ec NOT FOUND after 8s wait");
+        console.log("⚠️ .Upo0Ec not found via waitForSelector");
         return false;
       });
 
-      // Debug info
-      const pageUrl = page.url();
-      const pageTitle = await page.title();
-      console.log(`🌐 URL: ${pageUrl.substring(0, 100)}...`);
-      console.log(`📄 Title: ${pageTitle}`);
-
-      // SIMPLIFIED: Only check for .Upo0Ec class
+      // Double check in DOM
       const result = await page.evaluate(() => {
         const upo0ec = document.querySelector(".Upo0Ec");
 
         if (upo0ec) {
-          console.log("✅ .Upo0Ec element found in DOM");
+          console.log("✅ .Upo0Ec CONFIRMED in DOM");
+          // Check if it's visible
+          const rect = upo0ec.getBoundingClientRect();
+          console.log(`📐 Element dimensions: ${rect.width}x${rect.height}`);
           return "live";
         }
 
-        console.log("❌ .Upo0Ec element NOT in DOM");
+        console.log("❌ .Upo0Ec NOT in DOM");
 
-        // Additional debug: List all classes in body
-        const allClasses = new Set<string>();
-        document.querySelectorAll('[class]').forEach(el => {
-          el.className.split(' ').forEach(cls => {
-            if (cls.trim()) allClasses.add(cls.trim());
-          });
-        });
+        // Debug: Show first 10 classes we can find
+        const someClasses = Array.from(document.querySelectorAll('[class]'))
+          .slice(0, 20)
+          .map(el => el.className)
+          .filter(c => c && c.trim())
+          .slice(0, 10);
 
-        console.log(`📊 Total unique classes in DOM: ${allClasses.size}`);
-
-        // Check if any class contains "Upo"
-        const upoClasses = Array.from(allClasses).filter(cls => cls.includes('Upo'));
-        if (upoClasses.length > 0) {
-          console.log(`🔍 Found classes containing "Upo": ${upoClasses.join(', ')}`);
-        }
+        console.log(`📋 Sample classes found: ${someClasses.join(', ')}`);
 
         return "missing";
       });
