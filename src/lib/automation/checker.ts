@@ -75,33 +75,25 @@ export class LiveChecker {
       };
     }
 
-    // IMPORTANT: Create fresh browser for THIS check only (same as Express app)
+    // EXACT SAME AS WORKING EXPRESS APP: Fresh browser for each check
     // This prevents Google from detecting automation patterns
     let browser: Browser | null = null;
     let page: Page | null = null;
 
     try {
-      console.log(`📄 Getting browser for ${review.id}`);
+      console.log(`📄 Checking review: ${review.id}`);
       console.log(`🔗 Link: ${review.reviewLiveLink}`);
 
-      // PERFORMANCE: Use browser pool for faster checks
-      // Gets browser from pool (instant) or creates new one (2-3s)
-      browser = await browserPool.getBrowser();
+      // Launch fresh browser (NO POOL - same as working Express app)
+      browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      });
 
-      // Create context with maximum stealth settings
+      // EXACT SAME CONTEXT AS WORKING EXPRESS APP
       const context = await browser.newContext({
-        viewport: { width: 1920, height: 1080 }, // More realistic resolution
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36", // Latest Chrome
-        locale: 'en-US',
-        timezoneId: 'America/New_York',
-        permissions: ['geolocation'],
-        geolocation: { latitude: 40.7128, longitude: -74.0060 },
-        colorScheme: 'light',
-        javaScriptEnabled: true,
-        // Extra stealth
-        hasTouch: false,
-        isMobile: false,
-        deviceScaleFactor: 1,
+        viewport: { width: 1280, height: 720 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       });
 
       page = await context.newPage();
@@ -109,80 +101,23 @@ export class LiveChecker {
       // Listen to browser console for debugging
       page.on('console', msg => {
         const text = msg.text();
-        if (text.includes('✓') || text.includes('✗') || text.includes('Found') || text.includes('No review')) {
+        if (text.includes('✓') || text.includes('✗') || text.includes('Found') || text.includes('FOUND') || text.includes('NOT FOUND')) {
           console.log(`[Browser Console] ${text}`);
         }
       });
 
-      // STEALTH: Hide automation detection
-      await page.addInitScript(() => {
-        // Remove webdriver property
-        Object.defineProperty(navigator, 'webdriver', {
-          get: () => false,
-        });
+      // RESOURCE BLOCKING: Exact same as working Express app
+      await context.route('**/*.{png,jpg,jpeg,gif,svg,font,woff,woff2,mp4,pdf}', route => route.abort());
 
-        // Add chrome property
-        (window as any).chrome = {
-          runtime: {},
-        };
+      // EXACT SAME AS WORKING EXPRESS APP: Direct navigation with networkidle
+      console.log(`🌐 Navigating to: ${review.reviewLiveLink.substring(0, 80)}...`);
 
-        // Mock permissions
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters: any) =>
-          parameters.name === 'notifications'
-            ? Promise.resolve({ state: 'denied' } as PermissionStatus)
-            : originalQuery(parameters);
+      await page.goto(review.reviewLiveLink, {
+        waitUntil: "networkidle",
+        timeout: 30000,
       });
 
-      // NO RESOURCE BLOCKING - Let Google Maps load completely
-      // This is critical for .Upo0Ec to render properly
-
-      // BETTER APPROACH: Resolve short links first, then navigate
-      let finalUrl = review.reviewLiveLink;
-
-      // Check if it's a Google short link
-      if (review.reviewLiveLink.includes('maps.app.goo.gl') || review.reviewLiveLink.includes('g.co')) {
-        console.log(`🔗 Detected Google short link, resolving first...`);
-        try {
-          // Resolve the redirect using a simple HTTP request
-          const resolvedUrl = await this.resolveShortLink(review.reviewLiveLink);
-          if (resolvedUrl) {
-            finalUrl = resolvedUrl;
-            console.log(`✓ Resolved to: ${finalUrl.substring(0, 80)}...`);
-          }
-        } catch (e) {
-          console.log(`⚠ Could not resolve short link, using original`);
-        }
-      }
-
-      // SIMPLIFIED NAVIGATION - Direct approach
-      console.log(`🌐 Navigating to: ${finalUrl.substring(0, 80)}...`);
-
-      try {
-        // Direct navigation with domcontentloaded
-        await page.goto(finalUrl, {
-          waitUntil: "domcontentloaded",
-          timeout: 30000,
-        });
-        console.log(`✓ Navigation successful`);
-      } catch (error) {
-        // If navigation fails, try one more time with networkidle
-        console.log(`⚠ First navigation failed, retrying...`);
-        try {
-          await page.goto(finalUrl, {
-            waitUntil: "load",
-            timeout: 30000,
-          });
-          console.log(`✓ Navigation successful (retry)`);
-        } catch (error2) {
-          const errorMessage = error instanceof Error ? error.message : "Unknown error";
-          console.error(`❌ Navigation failed: ${errorMessage.substring(0, 100)}`);
-          throw error;
-        }
-      }
-
-      // Handle cookie consent quickly
-      await this.handleCookieConsent(page);
+      console.log(`✓ Navigation successful`);
 
       // Extract ID from link for strict matching
       const expectedId = this.extractReviewIdFromLink(review.reviewLiveLink);
@@ -232,23 +167,11 @@ export class LiveChecker {
         checkedAt: new Date(),
       };
     } finally {
-      // Clean up page and context first to prevent memory leaks
-      try {
-        if (page) {
-          await page.close().catch((e) => {
-            console.log('Page close error (ignored):', e.message);
-          });
-        }
-      } catch (e) {
-        // Ignore page close errors
-      }
-
-      // PERFORMANCE: Return browser to pool instead of closing
-      // This allows browser reuse for next check (0s vs 2-3s launch time)
+      // EXACT SAME CLEANUP AS WORKING EXPRESS APP: Always close browser
       if (browser) {
-        await browserPool.returnBrowser(browser).catch((e) => {
-          // Ignore ECONNRESET and other connection errors
-          console.log('Browser return error (ignored):', e instanceof Error ? e.message : 'Unknown');
+        await browser.close().catch((e) => {
+          // Ignore close errors (ECONNRESET, etc.)
+          console.log('Browser close error (ignored)');
         });
       }
     }
@@ -317,67 +240,23 @@ export class LiveChecker {
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      console.log("🔍 Checking for .Upo0Ec class...");
+      console.log("🔍 Targeting precise verification container (.Upo0Ec)...");
 
-      // Wait for page to be fully loaded and interactive
-      console.log("⏳ Waiting for page load...");
-      await page.waitForLoadState('load', { timeout: 20000 }).catch(() => {
-        console.log('⚠️ Load timeout, checking anyway');
-      });
-
-      // Wait for network activity to calm down
-      console.log("⏳ Waiting for network idle...");
-      await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {
-        console.log('⚠️ Network still active, checking anyway');
-      });
-
-      // Extra wait for JavaScript to execute
-      console.log("⏳ Waiting 5s for JS execution...");
-      await page.waitForTimeout(5000);
-
-      // Log current state
-      const pageUrl = page.url();
-      const pageTitle = await page.title();
-      console.log(`📄 Title: ${pageTitle}`);
-      console.log(`🌐 URL: ${pageUrl.substring(0, 120)}`);
-
-      // Try to wait for .Upo0Ec specifically
-      console.log("🎯 Looking for .Upo0Ec...");
-      const hasUpo0Ec = await page.waitForSelector(".Upo0Ec", {
-        timeout: 10000,
-        state: 'visible'
-      }).then(() => {
-        console.log("✅ .Upo0Ec FOUND (via waitForSelector)!");
-        return true;
-      }).catch(() => {
-        console.log("⚠️ .Upo0Ec not found via waitForSelector");
-        return false;
-      });
-
-      // Double check in DOM
+      // EXACT SAME LOGIC AS WORKING EXPRESS APP
       const result = await page.evaluate(() => {
-        const upo0ec = document.querySelector(".Upo0Ec");
+        const container = document.querySelector('.Upo0Ec');
+        const reviewButton = document.querySelector('button[data-review-id]');
+        const genericReview = document.querySelector('.jftiEf, .MyV7u');
 
-        if (upo0ec) {
-          console.log("✅ .Upo0Ec CONFIRMED in DOM");
-          // Check if it's visible
-          const rect = upo0ec.getBoundingClientRect();
-          console.log(`📐 Element dimensions: ${rect.width}x${rect.height}`);
-          return "live";
-        }
+        const isLive = !!(container || reviewButton || genericReview);
 
-        console.log("❌ .Upo0Ec NOT in DOM");
+        // Debug logging
+        console.log(`Container (.Upo0Ec): ${container ? 'FOUND' : 'NOT FOUND'}`);
+        console.log(`Review Button: ${reviewButton ? 'FOUND' : 'NOT FOUND'}`);
+        console.log(`Generic Review: ${genericReview ? 'FOUND' : 'NOT FOUND'}`);
+        console.log(`Final Result: ${isLive ? 'LIVE' : 'MISSING'}`);
 
-        // Debug: Show first 10 classes we can find
-        const someClasses = Array.from(document.querySelectorAll('[class]'))
-          .slice(0, 20)
-          .map(el => el.className)
-          .filter(c => c && c.trim())
-          .slice(0, 10);
-
-        console.log(`📋 Sample classes found: ${someClasses.join(', ')}`);
-
-        return "missing";
+        return isLive ? 'live' : 'missing';
       });
 
       const isLive = result === "live";
