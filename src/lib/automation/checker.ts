@@ -295,12 +295,64 @@ export class LiveChecker {
       console.log("🔍 Waiting for page to fully load...");
 
       // Extra wait for Google Maps to render
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(3000); // Increased to 3s
+
+      // Debug: Check current URL
+      const currentUrl = page.url();
+      console.log(`📍 Current URL: ${currentUrl.substring(0, 150)}`);
+
+      // Debug: Check if we're on the right page
+      const pageInfo = await page.evaluate(() => {
+        return {
+          title: document.title,
+          bodyLength: document.body?.innerText?.length || 0,
+          hasGoogleMaps: window.location.href.includes('google.com/maps'),
+          hasReviewInUrl: window.location.href.includes('review')
+        };
+      });
+
+      console.log(`📄 Page Title: ${pageInfo.title}`);
+      console.log(`📊 Body Content Length: ${pageInfo.bodyLength} chars`);
+      console.log(`🗺️ Is Google Maps: ${pageInfo.hasGoogleMaps}`);
+      console.log(`📝 Has 'review' in URL: ${pageInfo.hasReviewInUrl}`);
+
+      // If page seems empty or wrong, take screenshot for debugging
+      if (pageInfo.bodyLength < 1000 || !pageInfo.hasGoogleMaps) {
+        console.log(`⚠️ Page seems unusual (content too short or not Google Maps)`);
+        try {
+          const screenshotPath = `./debug-screenshots/review-${Date.now()}.png`;
+          await page.screenshot({ path: screenshotPath, fullPage: false });
+          console.log(`📸 Debug screenshot saved: ${screenshotPath}`);
+        } catch (e) {
+          console.log(`⚠️ Could not save screenshot`);
+        }
+      }
 
       console.log("🎯 Checking for review indicators...");
 
       // ENHANCED LOGIC: More selectors + better detection
       const result = await page.evaluate(() => {
+        // Check for blockers first
+        const hasCaptcha = document.body.innerText.includes('CAPTCHA') ||
+                          document.body.innerText.includes('unusual traffic');
+        const hasConsent = document.body.innerText.includes('Before you continue') ||
+                          document.querySelector('button[aria-label*="Accept"]') !== null;
+        const hasError = document.body.innerText.includes('Something went wrong') ||
+                        document.body.innerText.includes('Try again');
+
+        if (hasCaptcha) {
+          console.log('🚫 CAPTCHA detected!');
+          return 'captcha';
+        }
+        if (hasConsent) {
+          console.log('🍪 Consent screen detected!');
+          return 'consent';
+        }
+        if (hasError) {
+          console.log('⚠️ Error page detected!');
+          return 'error';
+        }
+
         // Primary indicators
         const container = document.querySelector('.Upo0Ec');
         const reviewButton = document.querySelector('button[data-review-id]');
@@ -329,12 +381,26 @@ export class LiveChecker {
         return isLive ? 'live' : 'missing';
       });
 
+      // Handle special cases
+      if (result === 'captcha') {
+        console.log("🚫 CAPTCHA blocking access - treating as ERROR");
+        return false; // Will be marked as ERROR
+      }
+      if (result === 'consent') {
+        console.log("🍪 Consent screen blocking - treating as ERROR");
+        return false;
+      }
+      if (result === 'error') {
+        console.log("⚠️ Google Maps error page - treating as ERROR");
+        return false;
+      }
+
       const isLive = result === "live";
 
       if (isLive) {
-        console.log("✅ Review is LIVE (100% working logic confirmed)");
+        console.log("✅ Review is LIVE");
       } else {
-        console.log("✗ Review is MISSING (100% working logic confirmed)");
+        console.log("❌ Review is MISSING");
       }
 
       return isLive;
