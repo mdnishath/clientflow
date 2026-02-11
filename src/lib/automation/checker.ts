@@ -101,8 +101,10 @@ export class LiveChecker {
       // Listen to browser console for debugging
       page.on('console', msg => {
         const text = msg.text();
-        if (text.includes('✓') || text.includes('✗') || text.includes('Found') || text.includes('FOUND') || text.includes('NOT FOUND')) {
-          console.log(`[Browser Console] ${text}`);
+        // Log all detection-related messages
+        if (text.includes('✅') || text.includes('❌') || text.includes('DETECTION') ||
+            text.includes('FOUND') || text.includes('Final Result') || text.includes('===')) {
+          console.log(`[Browser] ${text}`);
         }
       });
 
@@ -290,21 +292,39 @@ export class LiveChecker {
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      console.log("🔍 Targeting precise verification container (.Upo0Ec)...");
+      console.log("🔍 Waiting for page to fully load...");
 
-      // EXACT SAME LOGIC AS WORKING EXPRESS APP
+      // Extra wait for Google Maps to render
+      await page.waitForTimeout(2000);
+
+      console.log("🎯 Checking for review indicators...");
+
+      // ENHANCED LOGIC: More selectors + better detection
       const result = await page.evaluate(() => {
+        // Primary indicators
         const container = document.querySelector('.Upo0Ec');
         const reviewButton = document.querySelector('button[data-review-id]');
         const genericReview = document.querySelector('.jftiEf, .MyV7u');
 
-        const isLive = !!(container || reviewButton || genericReview);
+        // Additional indicators (Google Maps updates selectors frequently)
+        const reviewCard = document.querySelector('[data-review-id]');
+        const reviewText = document.querySelector('.wiI7pd');
+        const reviewContainer = document.querySelector('.fontBodyMedium');
+        const anyReview = document.querySelector('[jslog*="review"]');
 
-        // Debug logging
-        console.log(`Container (.Upo0Ec): ${container ? 'FOUND' : 'NOT FOUND'}`);
-        console.log(`Review Button: ${reviewButton ? 'FOUND' : 'NOT FOUND'}`);
-        console.log(`Generic Review: ${genericReview ? 'FOUND' : 'NOT FOUND'}`);
-        console.log(`Final Result: ${isLive ? 'LIVE' : 'MISSING'}`);
+        const isLive = !!(container || reviewButton || genericReview || reviewCard || reviewText || reviewContainer || anyReview);
+
+        // Enhanced debug logging
+        console.log(`=== DETECTION RESULTS ===`);
+        console.log(`Container (.Upo0Ec): ${container ? '✅ FOUND' : '❌ NOT FOUND'}`);
+        console.log(`Review Button: ${reviewButton ? '✅ FOUND' : '❌ NOT FOUND'}`);
+        console.log(`Generic Review (.jftiEf, .MyV7u): ${genericReview ? '✅ FOUND' : '❌ NOT FOUND'}`);
+        console.log(`Review Card [data-review-id]: ${reviewCard ? '✅ FOUND' : '❌ NOT FOUND'}`);
+        console.log(`Review Text (.wiI7pd): ${reviewText ? '✅ FOUND' : '❌ NOT FOUND'}`);
+        console.log(`Review Container (.fontBodyMedium): ${reviewContainer ? '✅ FOUND' : '❌ NOT FOUND'}`);
+        console.log(`Any Review [jslog]: ${anyReview ? '✅ FOUND' : '❌ NOT FOUND'}`);
+        console.log(`========================`);
+        console.log(`🎯 Final Result: ${isLive ? '✅ LIVE' : '❌ MISSING'}`);
 
         return isLive ? 'live' : 'missing';
       });
