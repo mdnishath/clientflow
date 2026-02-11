@@ -132,22 +132,23 @@ export class LiveChecker {
             : originalQuery(parameters);
       });
 
-      // OPTIMIZATION: Block only truly unnecessary resources
-      // Allow stylesheets as Google Maps needs CSS for proper rendering
+      // CRITICAL: Don't block ANY resources for Google Maps to work properly
+      // Google Maps needs full access to render .Upo0Ec and other elements
+      // Performance is secondary to accuracy
       await page.route("**/*", (route) => {
         const resourceType = route.request().resourceType();
-        const url = route.request().url();
 
-        // Block only heavy media files, but allow everything else for proper rendering
-        if (['image', 'font', 'media'].includes(resourceType)) {
-          // Allow small images (like icons) but block large ones
-          if (resourceType === 'image' && (url.includes('icon') || url.includes('logo'))) {
-            route.continue();
+        // Only block very large images to save bandwidth
+        if (resourceType === 'image') {
+          const url = route.request().url();
+          // Block large images but allow everything else
+          if (url.includes('googleusercontent') && url.includes('=w') && !url.includes('=w100')) {
+            route.abort(); // Block large photos
           } else {
-            route.abort();
+            route.continue(); // Allow icons, logos, UI images
           }
         } else {
-          // Allow document, script, stylesheet, xhr, fetch, other
+          // Allow ALL other resources (CSS, JS, fonts, etc.)
           route.continue();
         }
       });
@@ -355,103 +356,66 @@ export class LiveChecker {
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      console.log("🔍 AUDITING DOM...");
+      console.log("🔍 CHECKING FOR .Upo0Ec (THE ONLY INDICATOR)...");
 
-      // Wait for page to be fully interactive
-      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {
-        console.log('⚠️ Network not idle, proceeding anyway');
+      // Wait longer for Google Maps to fully load
+      console.log("⏳ Waiting for network to settle...");
+      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
+        console.log('⚠️ Network not idle after 15s, proceeding anyway');
       });
 
-      // Additional wait for dynamic content
-      await page.waitForTimeout(2000);
+      // Additional wait for dynamic content to render
+      console.log("⏳ Waiting 3s for dynamic content...");
+      await page.waitForTimeout(3000);
 
-      // Try to wait for Google Maps specific selectors
-      try {
-        await page.waitForSelector(".jftiEf, .Upo0Ec, [data-review-id], .MyV7u, .GHT2ce, div[role='article']", {
-          timeout: 5000,
-        });
-        console.log('✓ Google Maps selector found');
-      } catch (e) {
-        console.log('⚠️ No specific selector found, checking DOM anyway');
-        await page.waitForTimeout(1000);
-      }
+      // Wait specifically for .Upo0Ec with longer timeout
+      console.log("🎯 Waiting for .Upo0Ec selector...");
+      const hasUpo0Ec = await page.waitForSelector(".Upo0Ec", {
+        timeout: 8000,
+        state: 'attached'
+      }).then(() => {
+        console.log("✅ .Upo0Ec FOUND!");
+        return true;
+      }).catch(() => {
+        console.log("❌ .Upo0Ec NOT FOUND after 8s wait");
+        return false;
+      });
 
-      // Extract Google Review ID for precise matching
-      const targetId = expectedId || this.extractReviewIdFromLink(page.url());
-      console.log(`🔑 Target ID: ${targetId || 'none'}`);
-      console.log(`🌐 Current URL: ${page.url().substring(0, 100)}...`);
-
-      // Get page title for debugging
+      // Debug info
+      const pageUrl = page.url();
       const pageTitle = await page.title();
-      console.log(`📄 Page title: ${pageTitle}`);
+      console.log(`🌐 URL: ${pageUrl.substring(0, 100)}...`);
+      console.log(`📄 Title: ${pageTitle}`);
 
-      // EXACT SAME EVALUATION LOGIC as working app + Enhanced debugging
-      const result = await page.evaluate((gId) => {
-        console.log(`🔍 Starting DOM evaluation with ID: ${gId || 'none'}`);
+      // SIMPLIFIED: Only check for .Upo0Ec class
+      const result = await page.evaluate(() => {
+        const upo0ec = document.querySelector(".Upo0Ec");
 
-        // 1. Check for specific ID if provided
-        if (gId) {
-          const byId = document.querySelector(`[data-review-id="${gId}"]`);
-          if (byId) {
-            console.log("✓ Found by data-review-id");
-            return "live";
-          }
-          console.log(`✗ data-review-id="${gId}" not found`);
-        }
-
-        // 2. Check for general review containers that indicate the link is valid and showing content
-        const selectors = [
-          ".jftiEf",              // Main review card
-          ".MyV7u",               // Individual review wrapper
-          ".Upo0Ec",              // List container (THE KEY ONE!)
-          "[data-review-id]",     // Any element with a review ID
-          ".GHT2ce",              // Specific review highlight wrapper
-          ".WI7S7c",              // Review text element
-          "div[role='article']",  // ARIA role for reviews
-          ".fontBodyMedium",      // Review text container
-          ".wiI7pd",              // Review content wrapper
-          ".GHT2ce",              // Highlighted review
-          ".review-full-text",    // Full review text
-        ];
-
-        console.log(`🔎 Checking ${selectors.length} selectors...`);
-        for (const sel of selectors) {
-          const element = document.querySelector(sel);
-          if (element) {
-            console.log(`✓ Found selector: ${sel}`);
-            return "live";
-          }
-        }
-        console.log("✗ No selectors matched");
-
-        // 3. Check URL patterns for review pages
-        const url = window.location.href;
-        if (url.includes('/reviews') || url.includes('!1s') || url.includes('data-review-id')) {
-          console.log("✓ URL indicates review page");
-
-          // Check if we can see ANY review-like content
-          const hasReviewText = document.body.innerText.toLowerCase().includes("review") ||
-                               document.body.innerText.toLowerCase().includes("avis") ||
-                               document.body.innerText.toLowerCase().includes("étoile") ||
-                               document.body.innerText.toLowerCase().includes("star");
-
-          if (hasReviewText) {
-            console.log("✓ Found review-related text in page");
-            return "live";
-          }
-        }
-
-        // 4. Final check: Look for review structure
-        const reviewElements = document.querySelectorAll('[jsaction*="review"], [data-review], .review');
-        if (reviewElements.length > 0) {
-          console.log(`✓ Found ${reviewElements.length} review elements`);
+        if (upo0ec) {
+          console.log("✅ .Upo0Ec element found in DOM");
           return "live";
         }
 
-        console.log("✗ No review indicators found anywhere");
-        console.log(`Page has ${document.body.innerText.length} chars of text`);
+        console.log("❌ .Upo0Ec element NOT in DOM");
+
+        // Additional debug: List all classes in body
+        const allClasses = new Set<string>();
+        document.querySelectorAll('[class]').forEach(el => {
+          el.className.split(' ').forEach(cls => {
+            if (cls.trim()) allClasses.add(cls.trim());
+          });
+        });
+
+        console.log(`📊 Total unique classes in DOM: ${allClasses.size}`);
+
+        // Check if any class contains "Upo"
+        const upoClasses = Array.from(allClasses).filter(cls => cls.includes('Upo'));
+        if (upoClasses.length > 0) {
+          console.log(`🔍 Found classes containing "Upo": ${upoClasses.join(', ')}`);
+        }
+
         return "missing";
-      }, targetId);
+      });
 
       const isLive = result === "live";
 
