@@ -59,9 +59,21 @@ export function LiveCheckButton({
     stop,
   } = useBatchCheck();
 
+  // Persist dialog state to localStorage
+  useEffect(() => {
+    if (showBatchDialog) {
+      localStorage.setItem('liveCheckDialogOpen', 'true');
+    } else {
+      localStorage.removeItem('liveCheckDialogOpen');
+    }
+  }, [showBatchDialog]);
+
   // Auto-show batch dialog when processing (handles refresh case)
   useEffect(() => {
-    if (isProcessing && !showBatchDialog) {
+    // Restore dialog state from localStorage on mount
+    const wasDialogOpen = localStorage.getItem('liveCheckDialogOpen') === 'true';
+
+    if (isProcessing && (wasDialogOpen || !showBatchDialog)) {
       setShowBatchDialog(true);
     }
   }, [isProcessing]);
@@ -216,6 +228,22 @@ export function LiveCheckButton({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* Floating "Show Checker" button - shows when dialog is closed but processing */}
+      {isProcessing && !showBatchDialog && (
+        <button
+          onClick={() => setShowBatchDialog(true)}
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-full bg-indigo-600 border border-indigo-500 text-white shadow-lg shadow-black/30 animate-pulse hover:scale-105 transition-all"
+        >
+          <Loader2 size={18} className="animate-spin" />
+          <span className="font-medium">
+            {progress.processedReviews}/{progress.totalReviews} Checking...
+          </span>
+          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+            Click to show
+          </span>
+        </button>
+      )}
 
       {/* Batch Progress Dialog */}
       <Dialog open={showBatchDialog} onOpenChange={setShowBatchDialog}>
