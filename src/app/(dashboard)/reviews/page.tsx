@@ -190,7 +190,7 @@ export default function ReviewsPage() {
     const [clientFilter, setClientFilter] = useState("all");
     const [categoryFilter, setCategoryFilter] = useState("all");
     const [profileFilter, setProfileFilter] = useState("all");
-    const [dueDateFilter, setDueDateFilter] = useState("today"); // "all" | "today"
+    // Removed dueDateFilter - no longer needed
     const [search, setSearch] = useState("");
     const [showArchived, setShowArchived] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -234,14 +234,6 @@ export default function ReviewsPage() {
 
         // Profile Filter
         if (profileFilter !== "all" && r.profile?.id !== profileFilter) return false;
-
-        // Due Date Filter (Today)
-        if (dueDateFilter === "today") {
-            const today = new Date().toISOString().split('T')[0];
-            const due = r.dueDate ? new Date(r.dueDate).toISOString().split('T')[0] : null;
-            // logic: if filter is today, show Overdue OR Due Today
-            if (!due || due > today) return false;
-        }
 
         // Search (Basic client-side fallback)
         if (search) {
@@ -348,19 +340,14 @@ export default function ReviewsPage() {
         if (search) params.search = search;
         if (showArchived) params.isArchived = true;
 
-        // Add due date filter
-        if (dueDateFilter === "today") {
-            params.dueDate = new Date().toISOString().split('T')[0]; // simple YYYY-MM-DD for today
-        }
-
         await dispatch(fetchReviews(params));
-    }, [dispatch, clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived, dueDateFilter]);
+    }, [dispatch, clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived]);
 
     // Reset displayed count when filters change
     useEffect(() => {
         setDisplayedCount(20);
         setSelectedIds([]);
-    }, [clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived, dueDateFilter]);
+    }, [clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived]);
 
     useEffect(() => {
         fetchReviewsData();
@@ -617,7 +604,6 @@ export default function ReviewsPage() {
                         profileFilter={profileFilter}
                         categoryFilter={categoryFilter}
                         clientFilter={clientFilter}
-                        dueDateFilter={dueDateFilter}
                         search={search}
                         showArchived={showArchived}
                         selectedIds={Array.from(selectedIds)}
@@ -741,17 +727,6 @@ export default function ReviewsPage() {
                         </SelectContent>
                     </Select>
                 )}
-
-                <div className="flex items-center space-x-2">
-                    <Button
-                        variant={dueDateFilter === "today" ? "default" : "outline"}
-                        onClick={() => setDueDateFilter(prev => prev === "today" ? "all" : "today")}
-                        className={`h-10 ${dueDateFilter === "today" ? "bg-indigo-600 hover:bg-indigo-700" : "bg-slate-800 border-slate-700 text-slate-300 hover:text-white"}`}
-                    >
-                        <Calendar size={14} className="mr-2" />
-                        Due Today
-                    </Button>
-                </div>
 
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-[150px] bg-slate-800/50 border-slate-700 text-white">

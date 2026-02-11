@@ -32,7 +32,6 @@ interface AdvancedExportButtonProps {
   // Reviews page specific filters
   clientFilter?: string;
   categoryFilter?: string;
-  dueDateFilter?: string;
 
   // Selection
   selectedIds?: string[];
@@ -48,7 +47,6 @@ export function AdvancedExportButton({
   showArchived = false,
   clientFilter = "all",
   categoryFilter = "all",
-  dueDateFilter = "all",
   selectedIds = [],
   totalFilteredCount = 0,
 }: AdvancedExportButtonProps) {
@@ -93,9 +91,6 @@ export function AdvancedExportButton({
         }
         if (categoryFilter && categoryFilter !== "all") {
           params.set("category", categoryFilter);
-        }
-        if (dueDateFilter && dueDateFilter !== "all") {
-          params.set("dueDate", dueDateFilter);
         }
       }
 
@@ -146,7 +141,6 @@ export function AdvancedExportButton({
     if (profileFilter !== "all") filters.push("Profile filtered");
     if (clientFilter !== "all") filters.push("Client filtered");
     if (categoryFilter !== "all") filters.push(`Category: ${categoryFilter}`);
-    if (dueDateFilter !== "all") filters.push(`Due: ${dueDateFilter}`);
     if (emailSearch) filters.push(`Email: ${emailSearch}`);
     if (search) filters.push("Search active");
     if (showArchived) filters.push("Archived");

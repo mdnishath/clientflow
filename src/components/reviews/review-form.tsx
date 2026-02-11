@@ -129,6 +129,15 @@ export function ReviewForm({
         }
     }, [open, isEditing, defaultProfileId]);
 
+    // Helper function to get local date in YYYY-MM-DD format
+    const getLocalDateString = () => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
     // Populate form when editing
     useEffect(() => {
         if (review) {
@@ -139,7 +148,7 @@ export function ReviewForm({
             setStatus(review.status);
             // Auto-set due date to today if status is PENDING and no due date set
             if (review.status === "PENDING" && !review.dueDate) {
-                setDueDate(new Date().toISOString().split("T")[0]);
+                setDueDate(getLocalDateString());
             } else {
                 setDueDate(review.dueDate ? review.dueDate.split("T")[0] : "");
             }
@@ -151,7 +160,7 @@ export function ReviewForm({
             setReviewLiveLink("");
             setEmailUsed("");
             setStatus("PENDING");
-            setDueDate(new Date().toISOString().split("T")[0]); // Default to current date
+            setDueDate(getLocalDateString()); // Default to current local date
             setNotes("");
         }
     }, [review, open]);
