@@ -333,23 +333,40 @@ export class LiveChecker {
         const reviewRating = document.querySelector('[aria-label*="star"]');
 
         // Strategy 4: Check for "Like" and "Share" buttons (visible in screenshot)
-        const likeButton = Array.from(document.querySelectorAll('button')).find(btn =>
-          btn.textContent?.includes('Like') || btn.textContent?.includes('लाईक')
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const likeButton = buttons.find(btn =>
+          btn.textContent?.toLowerCase().includes('like') ||
+          btn.getAttribute('aria-label')?.toLowerCase().includes('like')
+        );
+        const shareButton = buttons.find(btn =>
+          btn.textContent?.toLowerCase().includes('share') ||
+          btn.getAttribute('aria-label')?.toLowerCase().includes('share')
         );
 
-        // Strategy 5: Check URL contains review data
+        // Strategy 5: Check for ANY text content that looks like a review
+        const bodyText = document.body.innerText.toLowerCase();
+        const hasReviewKeywords = bodyText.includes('review') ||
+                                  bodyText.includes('star') ||
+                                  bodyText.includes('visited') ||
+                                  bodyText.includes('ago') ||
+                                  bodyText.includes('rating');
+
+        // Strategy 6: Check URL contains review data
         const urlHasReview = window.location.href.includes('/reviews/') ||
                             window.location.href.includes('data=') ||
                             window.location.href.includes('!1s');
 
-        const isLive = !!(upo0ec || reviewIdElement || (reviewText && reviewRating) || (likeButton && urlHasReview));
+        // MORE AGGRESSIVE: If URL is review page AND has any review-like content = LIVE
+        const isLive = !!(upo0ec || reviewIdElement || (reviewText && reviewRating) ||
+                         (likeButton || shareButton) || (urlHasReview && hasReviewKeywords));
 
         // Detailed logging
         console.log(`Strategy 1 - .Upo0Ec: ${upo0ec ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
         console.log(`Strategy 2 - [data-review-id]: ${reviewIdElement ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
         console.log(`Strategy 3 - Review text+rating: ${(reviewText && reviewRating) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`Strategy 4 - Like button: ${likeButton ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`Strategy 5 - URL has review: ${urlHasReview ? 'YES ✅' : 'NO ❌'}`);
+        console.log(`Strategy 4 - Like/Share buttons: ${(likeButton || shareButton) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`Strategy 5 - Review keywords in text: ${hasReviewKeywords ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`Strategy 6 - URL has review: ${urlHasReview ? 'YES ✅' : 'NO ❌'}`);
 
         return isLive ? 'live' : 'missing';
       });
