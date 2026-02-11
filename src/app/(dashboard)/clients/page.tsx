@@ -296,7 +296,7 @@ export default function ClientsPage() {
                         Clients
                     </h1>
                     <p className="text-slate-400 text-sm mt-1">
-                        {meta ? `${meta.total} total clients` : "Manage your GMB clients"}
+                        {allClients.length > 0 ? `${allClients.length} total clients` : "Manage your GMB clients"}
                     </p>
                 </div>
                 <Button

@@ -318,7 +318,6 @@ export default function ReviewsPage() {
     // Fetch reviews
     const fetchReviewsData = useCallback(async () => {
         const params: {
-            page: number;
             limit: number;
             clientId?: string;
             category?: string;

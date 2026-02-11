@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
+import InfiniteScroll from "react-infinite-scroll-component";
 import { useAuth } from "@/hooks/useAuth";
 import {
     ArrowLeft,
@@ -40,7 +41,6 @@ import {
 } from "@/components/ui/select";
 import { ProfileForm } from "@/components/profiles/profile-form";
 import { ReviewForm } from "@/components/reviews/review-form";
-import { PaginationControls } from "@/components/ui/pagination-controls";
 import { CopyButton } from "@/components/ui/copy-button";
 import { ExportButton } from "@/components/reviews/export-button";
 import { toast } from "sonner";
@@ -177,7 +177,7 @@ export default function ProfileDetailPage() {
     const { data: profile, loading: profileLoading } = useAppSelector((state) => state.profile);
     const { items: reviews, meta, loading: reviewsLoading } = useAppSelector((state) => state.reviews);
 
-    const [page, setPage] = useState(1);
+    const [displayedCount, setDisplayedCount] = useState(100);
     const [statusFilter, setStatusFilter] = useState("all");
     const [search, setSearch] = useState("");
     const [showArchived, setShowArchived] = useState(false);
@@ -198,24 +198,23 @@ export default function ProfileDetailPage() {
         if (!profileId) return;
         const params: {
             profileId: string;
-            page: number;
             limit: number;
             status?: string;
             search?: string;
             isArchived?: boolean;
             showScheduled?: boolean;
-        } = { profileId, page, limit: 10, showScheduled: true };
+        } = { profileId, limit: 5000, showScheduled: true };
 
         if (statusFilter !== "all") params.status = statusFilter;
         if (search) params.search = search;
         if (showArchived) params.isArchived = true;
 
         dispatch(fetchReviews(params));
-    }, [dispatch, profileId, page, statusFilter, search, showArchived]);
+    }, [dispatch, profileId, statusFilter, search, showArchived]);
 
     // Reset page when filters change
     useEffect(() => {
-        setPage(1);
+        setDisplayedCount(100);
         setSelectedIds([]);
     }, [statusFilter, search, showArchived]);
 
@@ -232,6 +231,13 @@ export default function ProfileDetailPage() {
     useEffect(() => {
         fetchReviewsData();
     }, [fetchReviewsData]);
+
+    // Infinite scroll logic
+    const displayedReviews = reviews.slice(0, displayedCount);
+    const hasMore = displayedCount < reviews.length;
+    const loadMore = useCallback(() => {
+        setDisplayedCount(prev => Math.min(prev + 100, reviews.length));
+    }, [reviews.length]);
 
     // Selection functions
     const toggleSelection = (id: string) => {
@@ -678,8 +684,24 @@ export default function ProfileDetailPage() {
                     </CardContent>
                 </Card>
             ) : (
-                <div className="space-y-3">
-                    {reviews.map((review) => {
+                <InfiniteScroll
+                    dataLength={displayedReviews.length}
+                    next={loadMore}
+                    hasMore={hasMore}
+                    loader={
+                        <div className="text-center py-4 text-slate-400 text-sm">
+                            <Loader2 className="inline-block mr-2 h-4 w-4 animate-spin" />
+                            Loading more reviews...
+                        </div>
+                    }
+                    endMessage={
+                        <div className="text-center py-4 text-slate-500 text-sm">
+                            ✓ All {reviews.length} reviews loaded
+                        </div>
+                    }
+                    className="space-y-3"
+                >
+                    {displayedReviews.map((review) => {
                         const isSelected = selectedIds.includes(review.id);
                         const isLiveOrDone = review.status === "LIVE" || review.status === "DONE";
 
@@ -826,19 +848,7 @@ export default function ProfileDetailPage() {
                             </Card>
                         );
                     })}
-                </div>
-            )}
-
-            {/* Pagination Controls */}
-            {meta && meta.totalPages > 1 && (
-                <div className="mt-6">
-                    <PaginationControls
-                        currentPage={page}
-                        totalPages={meta.totalPages}
-                        onPageChange={setPage}
-                        isLoading={isLoading}
-                    />
-                </div>
+                </InfiniteScroll>
             )}
 
             {/* Profile Form (Edit) */}
