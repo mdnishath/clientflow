@@ -110,10 +110,12 @@ export class LiveChecker {
       const userAgent = this.getRandomUserAgent();
       console.log(`🎭 Using User-Agent: ${userAgent.substring(0, 50)}...`);
 
-      // Context with random user agent
+      // Context with random user agent + ENGLISH LOCALE
       const context = await browser.newContext({
         viewport: { width: 1280, height: 720 },
-        userAgent: userAgent
+        userAgent: userAgent,
+        locale: 'en-US',  // Force English language
+        timezoneId: 'America/New_York'  // US timezone
       });
 
       page = await context.newPage();
@@ -309,7 +311,7 @@ export class LiveChecker {
 
   /**
    * Screenshot-based detection (FALLBACK)
-   * Analyzes screenshot to detect if review content is visible
+   * Based on actual LIVE vs MISSING screenshots provided by user
    */
   private async screenshotBasedDetection(page: Page): Promise<boolean> {
     try {
@@ -318,83 +320,106 @@ export class LiveChecker {
       // Take screenshot
       const screenshot = await page.screenshot({ type: 'png', fullPage: false });
 
-      // Get page dimensions and content info
+      // Analyze page content based on actual examples
       const pageInfo = await page.evaluate(() => {
+        const bodyText = document.body.innerText;
+        const bodyTextLower = bodyText.toLowerCase();
+
         return {
-          // Check if page has substantial content
-          bodyHeight: document.body.scrollHeight,
-          bodyWidth: document.body.scrollWidth,
-          // Check for star rating (★) in text
-          hasStars: document.body.innerText.includes('★') || document.body.innerText.includes('⭐'),
-          // Check for common review phrases
-          textContent: document.body.innerText.toLowerCase(),
-          // Check if it's a Google page
+          // MISSING indicators (from your screenshot)
+          hasMissingMessage: bodyTextLower.includes('this review is no longer available') ||
+                            bodyTextLower.includes('review is no longer available') ||
+                            bodyTextLower.includes('no longer available'),
+
+          // LIVE indicators (from your screenshot)
+          hasLikeButton: Array.from(document.querySelectorAll('button')).some(btn =>
+            btn.textContent?.toLowerCase().includes('like') ||
+            btn.getAttribute('aria-label')?.toLowerCase().includes('like')
+          ),
+
+          hasShareButton: Array.from(document.querySelectorAll('button')).some(btn =>
+            btn.textContent?.toLowerCase().includes('share') ||
+            btn.getAttribute('aria-label')?.toLowerCase().includes('share')
+          ),
+
+          hasStarRating: bodyText.includes('★') ||
+                        bodyText.includes('⭐') ||
+                        !!document.querySelector('[aria-label*="star"]') ||
+                        !!document.querySelector('[aria-label*="Star"]'),
+
+          hasReviewText: bodyTextLower.includes('visited in') ||
+                        bodyTextLower.includes('hours ago') ||
+                        bodyTextLower.includes('days ago') ||
+                        bodyTextLower.includes('weeks ago') ||
+                        bodyTextLower.includes('months ago') ||
+                        bodyTextLower.includes('years ago'),
+
+          // Additional checks
+          hasContent: document.body.scrollHeight > 400,
           isGoogle: window.location.hostname.includes('google'),
-          // Check URL for review indicators
-          urlHasReview: window.location.href.includes('/reviews/') || window.location.href.includes('!1s'),
-          // Check for SVG elements (likely star icons)
-          hasSvgElements: document.querySelectorAll('svg').length > 5,
-          // Check for role="img" elements (likely icons)
-          hasImageRoles: document.querySelectorAll('[role="img"]').length > 3
+
+          // Debug info
+          textSample: bodyText.substring(0, 200)
         };
       });
 
-      console.log(`📊 Page analysis: Height=${pageInfo.bodyHeight}px, Width=${pageInfo.bodyWidth}px`);
-      console.log(`⭐ Has star symbols: ${pageInfo.hasStars}`);
-      console.log(`🎨 Has SVG elements: ${pageInfo.hasSvgElements}`);
-      console.log(`🖼️ Has image roles: ${pageInfo.hasImageRoles}`);
-      console.log(`🌐 Is Google domain: ${pageInfo.isGoogle}`);
-      console.log(`🔗 URL has review: ${pageInfo.urlHasReview}`);
+      console.log(`📊 Screenshot Analysis:`);
+      console.log(`   🚫 Missing message: ${pageInfo.hasMissingMessage ? 'YES ❌' : 'No'}`);
+      console.log(`   👍 Like button: ${pageInfo.hasLikeButton ? 'YES ✅' : 'No'}`);
+      console.log(`   🔗 Share button: ${pageInfo.hasShareButton ? 'YES ✅' : 'No'}`);
+      console.log(`   ⭐ Star rating: ${pageInfo.hasStarRating ? 'YES ✅' : 'No'}`);
+      console.log(`   📝 Review text: ${pageInfo.hasReviewText ? 'YES ✅' : 'No'}`);
+      console.log(`   📄 Text sample: "${pageInfo.textSample.substring(0, 80)}..."`);
 
-      // STRICTER HEURISTIC: Need multiple strong signals
-      const hasContent = pageInfo.bodyHeight > 500 && pageInfo.bodyWidth > 800;
+      // SIMPLE LOGIC based on your examples:
+      // If "no longer available" message = MISSING
+      if (pageInfo.hasMissingMessage) {
+        console.log("❌ Screenshot analysis: MISSING (found 'no longer available' message)");
 
-      // Text indicators (need multiple, not just one)
-      const textIndicatorCount = [
-        pageInfo.hasStars,
-        pageInfo.textContent.includes('review'),
-        pageInfo.textContent.includes('rating'),
-        pageInfo.textContent.includes('star'),
-        pageInfo.textContent.includes('visited'),
-        pageInfo.textContent.includes('ago')
-      ].filter(Boolean).length;
-
-      const hasMultipleTextIndicators = textIndicatorCount >= 2;
-
-      // Visual indicators (SVG + image roles)
-      const hasStrongVisualIndicators = pageInfo.hasSvgElements && pageInfo.hasImageRoles;
-
-      // STRICTER: Need URL + content + BOTH text and visual indicators
-      // URL alone is NOT enough!
-      const isLikelyReview = pageInfo.isGoogle &&
-                             hasContent &&
-                             pageInfo.urlHasReview &&
-                             hasMultipleTextIndicators &&
-                             hasStrongVisualIndicators;
-
-      if (isLikelyReview) {
-        console.log("✅ Screenshot analysis: LIVE detected!");
-        console.log(`   → Text indicators: ${textIndicatorCount}/6, Visual: ${hasStrongVisualIndicators ? 'Strong' : 'Weak'}`);
-        // Save screenshot for verification if needed
-        const screenshotPath = `./public/screenshots/review-${Date.now()}.png`;
+        // Save screenshot for verification
+        const screenshotPath = `./public/screenshots/missing-${Date.now()}.png`;
         try {
           await fs.writeFile(screenshotPath, screenshot);
           console.log(`💾 Screenshot saved: ${screenshotPath}`);
         } catch (e) {
-          console.log("⚠️ Could not save screenshot (non-critical)");
+          console.log("⚠️ Could not save screenshot");
         }
-        return true;
-      } else {
-        console.log("❌ Screenshot analysis: MISSING");
-        const reason = !pageInfo.isGoogle ? 'Not Google domain' :
-                       !hasContent ? 'Insufficient content' :
-                       !pageInfo.urlHasReview ? 'No review in URL' :
-                       !hasMultipleTextIndicators ? `Text indicators: ${textIndicatorCount}/6 (need 2+)` :
-                       !hasStrongVisualIndicators ? 'Weak visual indicators (need SVG + image roles)' :
-                       'Unknown';
-        console.log(`   → Reason: ${reason}`);
+
         return false;
       }
+
+      // If has Like + Share buttons + stars = LIVE
+      const hasLiveIndicators = pageInfo.hasLikeButton &&
+                               pageInfo.hasShareButton &&
+                               pageInfo.hasStarRating;
+
+      if (hasLiveIndicators) {
+        console.log("✅ Screenshot analysis: LIVE (found Like+Share+Stars)");
+
+        // Save screenshot for verification
+        const screenshotPath = `./public/screenshots/live-${Date.now()}.png`;
+        try {
+          await fs.writeFile(screenshotPath, screenshot);
+          console.log(`💾 Screenshot saved: ${screenshotPath}`);
+        } catch (e) {
+          console.log("⚠️ Could not save screenshot");
+        }
+
+        return true;
+      }
+
+      // Fallback: If has review text + stars (even without buttons)
+      const hasMinimalIndicators = pageInfo.hasStarRating && pageInfo.hasReviewText;
+
+      if (hasMinimalIndicators) {
+        console.log("✅ Screenshot analysis: LIVE (found Stars+Review text)");
+        return true;
+      }
+
+      // Default: MISSING
+      console.log("❌ Screenshot analysis: MISSING (insufficient indicators)");
+      return false;
+
     } catch (error) {
       console.error("Screenshot detection failed:", error);
       return false;
