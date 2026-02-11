@@ -346,28 +346,35 @@ export class LiveChecker {
       console.log(`🌐 Is Google domain: ${pageInfo.isGoogle}`);
       console.log(`🔗 URL has review: ${pageInfo.urlHasReview}`);
 
-      // LENIENT HEURISTIC: Multiple indicators that this is a review page
+      // STRICTER HEURISTIC: Need multiple strong signals
       const hasContent = pageInfo.bodyHeight > 500 && pageInfo.bodyWidth > 800;
 
-      // Check for review indicators (more lenient - ANY of these suggests review page)
-      const hasTextIndicators = pageInfo.hasStars ||
-                                pageInfo.textContent.includes('review') ||
-                                pageInfo.textContent.includes('rating') ||
-                                pageInfo.textContent.includes('star') ||
-                                pageInfo.textContent.includes('visited') ||
-                                pageInfo.textContent.includes('ago');
+      // Text indicators (need multiple, not just one)
+      const textIndicatorCount = [
+        pageInfo.hasStars,
+        pageInfo.textContent.includes('review'),
+        pageInfo.textContent.includes('rating'),
+        pageInfo.textContent.includes('star'),
+        pageInfo.textContent.includes('visited'),
+        pageInfo.textContent.includes('ago')
+      ].filter(Boolean).length;
 
-      // Check for visual indicators (SVG stars, image roles)
-      const hasVisualIndicators = pageInfo.hasSvgElements || pageInfo.hasImageRoles;
+      const hasMultipleTextIndicators = textIndicatorCount >= 2;
 
-      // LENIENT: If it's Google + has content + URL has review pattern, likely LIVE
-      // OR if it has both text and visual indicators
-      const isLikelyReview = pageInfo.isGoogle && hasContent &&
-                             (pageInfo.urlHasReview || (hasTextIndicators && hasVisualIndicators));
+      // Visual indicators (SVG + image roles)
+      const hasStrongVisualIndicators = pageInfo.hasSvgElements && pageInfo.hasImageRoles;
+
+      // STRICTER: Need URL + content + BOTH text and visual indicators
+      // URL alone is NOT enough!
+      const isLikelyReview = pageInfo.isGoogle &&
+                             hasContent &&
+                             pageInfo.urlHasReview &&
+                             hasMultipleTextIndicators &&
+                             hasStrongVisualIndicators;
 
       if (isLikelyReview) {
         console.log("✅ Screenshot analysis: LIVE detected!");
-        console.log(`   → Reason: ${pageInfo.urlHasReview ? 'URL has review pattern' : 'Text + Visual indicators present'}`);
+        console.log(`   → Text indicators: ${textIndicatorCount}/6, Visual: ${hasStrongVisualIndicators ? 'Strong' : 'Weak'}`);
         // Save screenshot for verification if needed
         const screenshotPath = `./public/screenshots/review-${Date.now()}.png`;
         try {
@@ -379,7 +386,13 @@ export class LiveChecker {
         return true;
       } else {
         console.log("❌ Screenshot analysis: MISSING");
-        console.log(`   → Missing: ${!pageInfo.isGoogle ? 'Not Google' : !hasContent ? 'Insufficient content' : 'No review indicators'}`);
+        const reason = !pageInfo.isGoogle ? 'Not Google domain' :
+                       !hasContent ? 'Insufficient content' :
+                       !pageInfo.urlHasReview ? 'No review in URL' :
+                       !hasMultipleTextIndicators ? `Text indicators: ${textIndicatorCount}/6 (need 2+)` :
+                       !hasStrongVisualIndicators ? 'Weak visual indicators (need SVG + image roles)' :
+                       'Unknown';
+        console.log(`   → Reason: ${reason}`);
         return false;
       }
     } catch (error) {
@@ -437,17 +450,26 @@ export class LiveChecker {
                             window.location.href.includes('data=') ||
                             window.location.href.includes('!1s');
 
-        // MORE AGGRESSIVE: If URL is review page AND has any review-like content = LIVE
-        const isLive = !!(upo0ec || reviewIdElement || (reviewText && reviewRating) ||
-                         (likeButton || shareButton) || (urlHasReview && hasReviewKeywords));
+        // STRICTER LOGIC: Need STRONG indicators, not just URL + keywords
+        // Strong indicators: .Upo0Ec, data-review-id, review text + rating, Like/Share buttons
+        const hasStrongIndicator = !!(upo0ec || reviewIdElement ||
+                                     (reviewText && reviewRating) ||
+                                     (likeButton && shareButton)); // Need BOTH buttons
+
+        // Weak indicator: URL + keywords (not enough alone)
+        const hasWeakIndicator = urlHasReview && hasReviewKeywords;
+
+        // Decision: Need at least 1 strong indicator OR (URL + keywords + multiple weak signals)
+        const isLive = hasStrongIndicator || (hasWeakIndicator && (likeButton || shareButton));
 
         // Detailed logging
-        console.log(`Strategy 1 - .Upo0Ec: ${upo0ec ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`Strategy 2 - [data-review-id]: ${reviewIdElement ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`Strategy 3 - Review text+rating: ${(reviewText && reviewRating) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`Strategy 4 - Like/Share buttons: ${(likeButton || shareButton) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`Strategy 5 - Review keywords in text: ${hasReviewKeywords ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`Strategy 6 - URL has review: ${urlHasReview ? 'YES ✅' : 'NO ❌'}`);
+        console.log(`[Browser] Strategy 1 - .Upo0Ec: ${upo0ec ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`[Browser] Strategy 2 - [data-review-id]: ${reviewIdElement ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`[Browser] Strategy 3 - Review text+rating: ${(reviewText && reviewRating) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`[Browser] Strategy 4 - Like/Share buttons: ${(likeButton || shareButton) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`[Browser] Strategy 5 - Review keywords in text: ${hasReviewKeywords ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`[Browser] Strategy 6 - URL has review: ${urlHasReview ? 'YES ✅' : 'NO ❌'}`);
+        console.log(`[Browser] 🎯 Strong indicator: ${hasStrongIndicator ? 'YES ✅' : 'NO ❌'}`);
 
         return isLive ? 'live' : 'missing';
       });
