@@ -118,10 +118,10 @@ export class LiveChecker {
 
       page = await context.newPage();
 
-      // Listen to browser console for .Upo0Ec detection
+      // Listen to browser console for detection results
       page.on('console', msg => {
         const text = msg.text();
-        if (text.includes('Upo0Ec')) {
+        if (text.includes('Strategy') || text.includes('✅') || text.includes('❌')) {
           console.log(`[Browser] ${text}`);
         }
       });
@@ -320,13 +320,38 @@ export class LiveChecker {
 
       console.log("🎯 Checking for .Upo0Ec...");
 
-      // ONLY CHECK .Upo0Ec - NOTHING ELSE
+      // Check for review presence with multiple strategies
       const result = await page.evaluate(() => {
+        // Strategy 1: Check for .Upo0Ec (old class)
         const upo0ec = document.querySelector('.Upo0Ec');
 
-        console.log(`Upo0Ec element: ${upo0ec ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        // Strategy 2: Check for any element with data-review-id attribute
+        const reviewIdElement = document.querySelector('[data-review-id]');
 
-        return upo0ec ? 'live' : 'missing';
+        // Strategy 3: Check for review content indicators
+        const reviewText = document.querySelector('.wiI7pd');
+        const reviewRating = document.querySelector('[aria-label*="star"]');
+
+        // Strategy 4: Check for "Like" and "Share" buttons (visible in screenshot)
+        const likeButton = Array.from(document.querySelectorAll('button')).find(btn =>
+          btn.textContent?.includes('Like') || btn.textContent?.includes('लाईक')
+        );
+
+        // Strategy 5: Check URL contains review data
+        const urlHasReview = window.location.href.includes('/reviews/') ||
+                            window.location.href.includes('data=') ||
+                            window.location.href.includes('!1s');
+
+        const isLive = !!(upo0ec || reviewIdElement || (reviewText && reviewRating) || (likeButton && urlHasReview));
+
+        // Detailed logging
+        console.log(`Strategy 1 - .Upo0Ec: ${upo0ec ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`Strategy 2 - [data-review-id]: ${reviewIdElement ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`Strategy 3 - Review text+rating: ${(reviewText && reviewRating) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`Strategy 4 - Like button: ${likeButton ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        console.log(`Strategy 5 - URL has review: ${urlHasReview ? 'YES ✅' : 'NO ❌'}`);
+
+        return isLive ? 'live' : 'missing';
       });
 
       const isLive = result === "live";
