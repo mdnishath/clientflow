@@ -109,15 +109,38 @@ export class LiveChecker {
       // RESOURCE BLOCKING: Exact same as working Express app
       await context.route('**/*.{png,jpg,jpeg,gif,svg,font,woff,woff2,mp4,pdf}', route => route.abort());
 
-      // EXACT SAME AS WORKING EXPRESS APP: Direct navigation with networkidle
+      // Navigation with fallback strategy
       console.log(`🌐 Navigating to: ${review.reviewLiveLink.substring(0, 80)}...`);
 
-      await page.goto(review.reviewLiveLink, {
-        waitUntil: "networkidle",
-        timeout: 30000,
-      });
-
-      console.log(`✓ Navigation successful`);
+      try {
+        // Try networkidle first (best for Google Maps)
+        await page.goto(review.reviewLiveLink, {
+          waitUntil: "networkidle",
+          timeout: 30000,
+        });
+        console.log(`✓ Navigation successful (networkidle)`);
+      } catch (error) {
+        // Fallback: If networkidle times out, try domcontentloaded
+        console.log(`⚠ Network not idle, trying domcontentloaded...`);
+        try {
+          await page.goto(review.reviewLiveLink, {
+            waitUntil: "domcontentloaded",
+            timeout: 20000,
+          });
+          console.log(`✓ Navigation successful (domcontentloaded)`);
+          // Wait a bit for dynamic content
+          await page.waitForTimeout(2000);
+        } catch (error2) {
+          // Last resort: navigate and wait
+          console.log(`⚠ DOM not loaded, last resort navigation...`);
+          await page.goto(review.reviewLiveLink, {
+            waitUntil: "commit",
+            timeout: 15000,
+          });
+          await page.waitForTimeout(3000);
+          console.log(`✓ Navigation successful (commit + wait)`);
+        }
+      }
 
       // Extract ID from link for strict matching
       const expectedId = this.extractReviewIdFromLink(review.reviewLiveLink);
