@@ -10,15 +10,15 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getClientScope } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 
 export async function GET(request: NextRequest) {
   try {
-    // Authentication check
-    const session = await auth();
-    if (!session?.user) {
+    // Authentication check with RBAC
+    const scope = await getClientScope();
+    if (!scope) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -28,9 +28,13 @@ export async function GET(request: NextRequest) {
     const searchFilter = searchParams.get("search");
     const completedFilter = searchParams.get("completed");
 
-    // Build where clause
+    // Build where clause with RBAC
     const where: any = {
-      userId: session.user.id,
+      // ADMIN sees all their clients' profiles, CLIENT sees only their data
+      ...(scope.isAdmin
+        ? { client: { userId: scope.userId } }
+        : { clientId: scope.clientId }
+      ),
     };
 
     // Apply category filter
