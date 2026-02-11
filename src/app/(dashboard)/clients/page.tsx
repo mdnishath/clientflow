@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import InfiniteScroll from "react-infinite-scroll-component";
 import { Plus, Search, Archive, MoreVertical, Trash2, Pencil, RotateCcw, CheckSquare, Loader2, Users, UserPlus, Shield, ShieldOff, Key, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ClientForm } from "@/components/clients/client-form";
-import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -40,11 +40,10 @@ interface PaginationMeta {
 }
 
 export default function ClientsPage() {
-    const [clients, setClients] = useState<Client[]>([]);
+    const [allClients, setAllClients] = useState<Client[]>([]);
+    const [displayedCount, setDisplayedCount] = useState(100);
     const [search, setSearch] = useState("");
     const [showArchived, setShowArchived] = useState(false);
-    const [page, setPage] = useState(1);
-    const [meta, setMeta] = useState<PaginationMeta | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -66,29 +65,34 @@ export default function ClientsPage() {
             const params = new URLSearchParams();
             if (search) params.set("search", search);
             if (showArchived) params.set("archived", "true");
-            params.set("page", page.toString());
-            params.set("limit", "12");
+            params.set("limit", "5000");
 
             const res = await fetch(`/api/clients?${params}`);
             if (res.ok) {
                 const data = await res.json();
-                setClients(data.data);
-                setMeta(data.meta);
+                setAllClients(data.data);
             }
         } catch (error) {
             console.error("Failed to fetch clients:", error);
         } finally {
             setIsLoading(false);
         }
-    }, [search, showArchived, page]);
+    }, [search, showArchived]);
 
-    // Reset to first page when filters change
+    // Infinite scroll logic
+    const clients = allClients.slice(0, displayedCount);
+    const hasMore = displayedCount < allClients.length;
+    const loadMore = useCallback(() => {
+        setDisplayedCount(prev => Math.min(prev + 100, allClients.length));
+    }, [allClients.length]);
+
+    // Reset displayed count when filters change
     useEffect(() => {
-        setPage(1);
+        setDisplayedCount(100);
         setSelectedIds([]);
     }, [search, showArchived]);
 
-    // Fetch clients when page or filters change
+    // Fetch clients when filters change
     useEffect(() => {
         fetchClients();
     }, [fetchClients]);
@@ -401,7 +405,23 @@ export default function ClientsPage() {
                     </CardContent>
                 </Card>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <InfiniteScroll
+                    dataLength={clients.length}
+                    next={loadMore}
+                    hasMore={hasMore}
+                    loader={
+                        <div className="col-span-full text-center py-4 text-slate-400 text-sm">
+                            <Loader2 className="inline-block mr-2 h-4 w-4 animate-spin" />
+                            Loading more clients...
+                        </div>
+                    }
+                    endMessage={
+                        <div className="col-span-full text-center py-4 text-slate-500 text-sm">
+                            ✓ All {allClients.length} clients loaded
+                        </div>
+                    }
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                >
                     {clients.map((client) => (
                         <Card
                             key={client.id}
@@ -540,17 +560,7 @@ export default function ClientsPage() {
                             </CardContent>
                         </Card>
                     ))}
-                </div>
-            )}
-
-            {/* Pagination */}
-            {meta && meta.totalPages > 1 && (
-                <PaginationControls
-                    currentPage={page}
-                    totalPages={meta.totalPages}
-                    onPageChange={setPage}
-                    isLoading={isLoading}
-                />
+                </InfiniteScroll>
             )}
 
             {/* Client Form Dialog */}

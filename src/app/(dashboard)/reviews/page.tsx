@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { format } from "date-fns";
 import { useSession } from "next-auth/react";
+import InfiniteScroll from "react-infinite-scroll-component";
 import {
     Star,
     Plus,
@@ -37,7 +38,6 @@ import {
 } from "@/components/ui/select";
 import { ReviewForm } from "@/components/reviews/review-form";
 import { ReviewGeneratorModal } from "@/components/reviews/review-generator-modal";
-import { PaginationControls } from "@/components/ui/pagination-controls";
 import { CopyButton } from "@/components/ui/copy-button";
 import { ExportButton } from "@/components/reviews/export-button";
 import { toast } from "sonner";
@@ -185,7 +185,7 @@ export default function ReviewsPage() {
 
     const { data: session } = useSession();
 
-    const [page, setPage] = useState(1);
+    const [displayedCount, setDisplayedCount] = useState(100); // Infinite scroll: 100 items at a time
     const [statusFilter, setStatusFilter] = useState("PENDING");
     const [clientFilter, setClientFilter] = useState("all");
     const [categoryFilter, setCategoryFilter] = useState("all");
@@ -217,11 +217,8 @@ export default function ReviewsPage() {
         totalUpdated: number;
     } | null>(null);
 
-    // Client-side filtering to ensure real-time updates respect the current view
-    // MOVED here to avoid ReferenceError (must be after state init)
-    // Client-side filtering to ensure real-time updates respect the current view
-    // MOVED here to avoid ReferenceError (must be after state init)
-    const reviews = allReviews.filter(r => {
+    // Client-side filtering
+    const filteredReviews = allReviews.filter(r => {
         // Status Filter
         if (statusFilter !== "all" && r.status !== statusFilter) return false;
 
@@ -257,6 +254,17 @@ export default function ReviewsPage() {
 
         return true;
     });
+
+    // Infinite scroll: display only first N items
+    const reviews = filteredReviews.slice(0, displayedCount);
+
+    // Check if more items available
+    const hasMore = displayedCount < filteredReviews.length;
+
+    // Load more function
+    const loadMore = useCallback(() => {
+        setDisplayedCount(prev => Math.min(prev + 100, filteredReviews.length));
+    }, [filteredReviews.length]);
 
     const isLoading = loading === "pending";
 
@@ -332,7 +340,7 @@ export default function ReviewsPage() {
             };
             isArchived?: boolean;
             dueDate?: string;
-        } = { page, limit: 20 };
+        } = { limit: 5000 }; // Fetch all, filter client-side
 
         if (clientFilter !== "all") params.clientId = clientFilter;
         if (categoryFilter !== "all") params.category = categoryFilter;
@@ -347,11 +355,11 @@ export default function ReviewsPage() {
         }
 
         await dispatch(fetchReviews(params));
-    }, [dispatch, page, clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived, dueDateFilter]);
+    }, [dispatch, clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived, dueDateFilter]);
 
-    // Reset page when filters change
+    // Reset displayed count when filters change
     useEffect(() => {
-        setPage(1);
+        setDisplayedCount(100);
         setSelectedIds([]);
     }, [clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived, dueDateFilter]);
 
@@ -871,7 +879,23 @@ export default function ReviewsPage() {
                     </CardContent>
                 </Card>
             ) : (
-                <div className="space-y-3">
+                <InfiniteScroll
+                    dataLength={reviews.length}
+                    next={loadMore}
+                    hasMore={hasMore}
+                    loader={
+                        <div className="text-center py-4 text-slate-400 text-sm">
+                            <Loader2 className="inline-block mr-2 h-4 w-4 animate-spin" />
+                            Loading more reviews...
+                        </div>
+                    }
+                    endMessage={
+                        <div className="text-center py-4 text-slate-500 text-sm">
+                            ✓ All {filteredReviews.length} reviews loaded
+                        </div>
+                    }
+                    className="space-y-3"
+                >
                     {reviews.map((review) => {
                         const isSelected = selectedIds.includes(review.id);
                         const isLiveOrDone = review.status === "LIVE" || review.status === "DONE";
@@ -1079,19 +1103,7 @@ export default function ReviewsPage() {
                             </Card>
                         );
                     })}
-                </div>
-            )}
-
-            {/* Pagination */}
-            {meta && meta.totalPages > 1 && (
-                <div className="mt-6">
-                    <PaginationControls
-                        currentPage={page}
-                        totalPages={meta.totalPages}
-                        onPageChange={setPage}
-                        isLoading={isLoading}
-                    />
-                </div>
+                </InfiniteScroll>
             )}
 
             {/* Review Form (Add/Edit) */}
