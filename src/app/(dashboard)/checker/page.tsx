@@ -191,7 +191,7 @@ export default function CheckerPage() {
     const urlCheckStatus = searchParams.get("checkStatus");
 
     // INFINITE SCROLL: Load 100 reviews at a time
-    const [displayedCount, setDisplayedCount] = useState(100);
+    const [displayedCount, setDisplayedCount] = useState(20);
     const [statusFilter, setStatusFilter] = useState("not-PENDING");
     const [checkStatusFilter, setCheckStatusFilter] = useState(urlCheckStatus || "all");
     const [profileFilter, setProfileFilter] = useState("all");
@@ -267,9 +267,9 @@ export default function CheckerPage() {
     // INFINITE SCROLL: Display first N reviews
     const displayedReviews = allFilteredReviews.slice(0, displayedCount);
 
-    // Load More function for infinite scroll - 100 items at a time
+    // Load More function for infinite scroll - 20 items at a time
     const loadMore = useCallback(() => {
-        setDisplayedCount(prev => Math.min(prev + 100, allFilteredReviews.length));
+        setDisplayedCount(prev => Math.min(prev + 20, allFilteredReviews.length));
     }, [allFilteredReviews.length]);
 
     // Check if we have more reviews to load
@@ -317,7 +317,7 @@ export default function CheckerPage() {
     // Clear selection and reset displayed count when filters change
     useEffect(() => {
         setSelectedIds([]);
-        setDisplayedCount(100); // Reset to show first 100
+        setDisplayedCount(20); // Reset to show first 20
     }, [statusFilter, checkStatusFilter, profileFilter, debouncedSearch, debouncedEmailSearch, showArchived]);
 
     useEffect(() => {

@@ -185,7 +185,7 @@ export default function ReviewsPage() {
 
     const { data: session } = useSession();
 
-    const [displayedCount, setDisplayedCount] = useState(100); // Infinite scroll: 100 items at a time
+    const [displayedCount, setDisplayedCount] = useState(20); // Infinite scroll: 20 items at a time
     const [statusFilter, setStatusFilter] = useState("PENDING");
     const [clientFilter, setClientFilter] = useState("all");
     const [categoryFilter, setCategoryFilter] = useState("all");
@@ -261,9 +261,9 @@ export default function ReviewsPage() {
     // Check if more items available
     const hasMore = displayedCount < filteredReviews.length;
 
-    // Load more function
+    // Load more function - 20 items at a time
     const loadMore = useCallback(() => {
-        setDisplayedCount(prev => Math.min(prev + 100, filteredReviews.length));
+        setDisplayedCount(prev => Math.min(prev + 20, filteredReviews.length));
     }, [filteredReviews.length]);
 
     const isLoading = loading === "pending";
@@ -358,7 +358,7 @@ export default function ReviewsPage() {
 
     // Reset displayed count when filters change
     useEffect(() => {
-        setDisplayedCount(100);
+        setDisplayedCount(20);
         setSelectedIds([]);
     }, [clientFilter, categoryFilter, profileFilter, statusFilter, search, showArchived, dueDateFilter]);
 
