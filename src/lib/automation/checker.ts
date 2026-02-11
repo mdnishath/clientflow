@@ -104,6 +104,14 @@ export class LiveChecker {
 
       page = await context.newPage();
 
+      // Listen to browser console for debugging
+      page.on('console', msg => {
+        const text = msg.text();
+        if (text.includes('✓') || text.includes('✗') || text.includes('Found') || text.includes('No review')) {
+          console.log(`[Browser Console] ${text}`);
+        }
+      });
+
       // STEALTH: Hide automation detection
       await page.addInitScript(() => {
         // Remove webdriver property
@@ -124,14 +132,22 @@ export class LiveChecker {
             : originalQuery(parameters);
       });
 
-      // OPTIMIZATION: Block heavy assets and unnecessary resources to speed up page load
+      // OPTIMIZATION: Block only truly unnecessary resources
+      // Allow stylesheets as Google Maps needs CSS for proper rendering
       await page.route("**/*", (route) => {
         const resourceType = route.request().resourceType();
-        // Block images, fonts, media, and other heavy resources
-        // Only allow document, script, xhr, and fetch for faster loading
-        if (['image', 'font', 'media', 'stylesheet', 'manifest', 'other'].includes(resourceType)) {
-          route.abort();
+        const url = route.request().url();
+
+        // Block only heavy media files, but allow everything else for proper rendering
+        if (['image', 'font', 'media'].includes(resourceType)) {
+          // Allow small images (like icons) but block large ones
+          if (resourceType === 'image' && (url.includes('icon') || url.includes('logo'))) {
+            route.continue();
+          } else {
+            route.abort();
+          }
         } else {
+          // Allow document, script, stylesheet, xhr, fetch, other
           route.continue();
         }
       });
@@ -339,26 +355,40 @@ export class LiveChecker {
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      console.log("🔍 AUDITING DOM (Optimized for speed)...");
+      console.log("🔍 AUDITING DOM...");
 
-      // OPTIMIZED: Reduced initial wait from 1.5s to 800ms
-      await page.waitForTimeout(800);
+      // Wait for page to be fully interactive
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {
+        console.log('⚠️ Network not idle, proceeding anyway');
+      });
 
-      // OPTIMIZED: Wait for Google Maps selectors with shorter timeout
+      // Additional wait for dynamic content
+      await page.waitForTimeout(2000);
+
+      // Try to wait for Google Maps specific selectors
       try {
-        await page.waitForSelector(".jftiEf, .Upo0Ec, [data-review-id], .MyV7u, .GHT2ce", {
-          timeout: 3000, // OPTIMIZED: Reduced from 5s to 3s for faster checks
+        await page.waitForSelector(".jftiEf, .Upo0Ec, [data-review-id], .MyV7u, .GHT2ce, div[role='article']", {
+          timeout: 5000,
         });
+        console.log('✓ Google Maps selector found');
       } catch (e) {
-        // OPTIMIZED: Fallback wait reduced from 1s to 500ms
-        await page.waitForTimeout(500);
+        console.log('⚠️ No specific selector found, checking DOM anyway');
+        await page.waitForTimeout(1000);
       }
 
       // Extract Google Review ID for precise matching
       const targetId = expectedId || this.extractReviewIdFromLink(page.url());
+      console.log(`🔑 Target ID: ${targetId || 'none'}`);
+      console.log(`🌐 Current URL: ${page.url().substring(0, 100)}...`);
 
-      // EXACT SAME EVALUATION LOGIC as working app
+      // Get page title for debugging
+      const pageTitle = await page.title();
+      console.log(`📄 Page title: ${pageTitle}`);
+
+      // EXACT SAME EVALUATION LOGIC as working app + Enhanced debugging
       const result = await page.evaluate((gId) => {
+        console.log(`🔍 Starting DOM evaluation with ID: ${gId || 'none'}`);
+
         // 1. Check for specific ID if provided
         if (gId) {
           const byId = document.querySelector(`[data-review-id="${gId}"]`);
@@ -366,6 +396,7 @@ export class LiveChecker {
             console.log("✓ Found by data-review-id");
             return "live";
           }
+          console.log(`✗ data-review-id="${gId}" not found`);
         }
 
         // 2. Check for general review containers that indicate the link is valid and showing content
@@ -376,28 +407,49 @@ export class LiveChecker {
           "[data-review-id]",     // Any element with a review ID
           ".GHT2ce",              // Specific review highlight wrapper
           ".WI7S7c",              // Review text element
-          "div[role='article']"   // ARIA role for reviews
+          "div[role='article']",  // ARIA role for reviews
+          ".fontBodyMedium",      // Review text container
+          ".wiI7pd",              // Review content wrapper
+          ".GHT2ce",              // Highlighted review
+          ".review-full-text",    // Full review text
         ];
 
+        console.log(`🔎 Checking ${selectors.length} selectors...`);
         for (const sel of selectors) {
-          if (document.querySelector(sel)) {
+          const element = document.querySelector(sel);
+          if (element) {
             console.log(`✓ Found selector: ${sel}`);
             return "live";
           }
         }
+        console.log("✗ No selectors matched");
 
-        // 3. Fallback: check for "avis" or "review" text if we are on a direct review page
-        const bodyText = document.body.innerText.toLowerCase();
-        if (bodyText.includes("avis") || bodyText.includes("review") || bodyText.includes("étoile")) {
-          // If we found review text but no specific container, it's likely a shell issue,
-          // but we check if common business containers exist to be sure
-          if (document.querySelector(".DUwDvf") || document.querySelector(".P69S9c")) {
-            console.log("✓ Found via text + business containers");
+        // 3. Check URL patterns for review pages
+        const url = window.location.href;
+        if (url.includes('/reviews') || url.includes('!1s') || url.includes('data-review-id')) {
+          console.log("✓ URL indicates review page");
+
+          // Check if we can see ANY review-like content
+          const hasReviewText = document.body.innerText.toLowerCase().includes("review") ||
+                               document.body.innerText.toLowerCase().includes("avis") ||
+                               document.body.innerText.toLowerCase().includes("étoile") ||
+                               document.body.innerText.toLowerCase().includes("star");
+
+          if (hasReviewText) {
+            console.log("✓ Found review-related text in page");
             return "live";
           }
         }
 
-        console.log("✗ No review indicators found");
+        // 4. Final check: Look for review structure
+        const reviewElements = document.querySelectorAll('[jsaction*="review"], [data-review], .review');
+        if (reviewElements.length > 0) {
+          console.log(`✓ Found ${reviewElements.length} review elements`);
+          return "live";
+        }
+
+        console.log("✗ No review indicators found anywhere");
+        console.log(`Page has ${document.body.innerText.length} chars of text`);
         return "missing";
       }, targetId);
 
