@@ -109,16 +109,30 @@ export class LiveChecker {
       // RESOURCE BLOCKING: Exact same as working Express app
       await context.route('**/*.{png,jpg,jpeg,gif,svg,font,woff,woff2,mp4,pdf}', route => route.abort());
 
+      // CRITICAL: Resolve short links FIRST before navigation
+      let finalUrl = review.reviewLiveLink;
+
+      if (review.reviewLiveLink.includes('maps.app.goo.gl') || review.reviewLiveLink.includes('g.co')) {
+        console.log(`🔗 Resolving short link...`);
+        const resolved = await this.resolveShortLink(review.reviewLiveLink);
+        if (resolved) {
+          finalUrl = resolved;
+          console.log(`✓ Resolved to: ${finalUrl.substring(0, 100)}...`);
+        } else {
+          console.log(`⚠ Could not resolve, using original link`);
+        }
+      }
+
       // Navigation with aggressive fallback strategy
-      console.log(`🌐 Navigating to: ${review.reviewLiveLink.substring(0, 80)}...`);
+      console.log(`🌐 Navigating to: ${finalUrl.substring(0, 80)}...`);
 
       let navigationSuccess = false;
 
       // Strategy 1: Try domcontentloaded (most reliable for Google Maps)
       try {
-        await page.goto(review.reviewLiveLink, {
+        await page.goto(finalUrl, {
           waitUntil: "domcontentloaded",
-          timeout: 45000, // Increased from 20s to 45s for slow redirects
+          timeout: 45000,
         });
         console.log(`✓ Navigation successful (domcontentloaded)`);
         // Wait for Google Maps dynamic content
@@ -129,7 +143,7 @@ export class LiveChecker {
 
         // Strategy 2: Try load event
         try {
-          await page.goto(review.reviewLiveLink, {
+          await page.goto(finalUrl, {
             waitUntil: "load",
             timeout: 45000,
           });
@@ -141,7 +155,7 @@ export class LiveChecker {
 
           // Strategy 3: Just commit and wait
           try {
-            await page.goto(review.reviewLiveLink, {
+            await page.goto(finalUrl, {
               waitUntil: "commit",
               timeout: 30000,
             });
