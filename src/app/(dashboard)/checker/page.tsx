@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { useDebounce } from "use-debounce";
@@ -184,6 +184,7 @@ function ReviewActionButtons({
 export default function CheckerPage() {
     const dispatch = useAppDispatch();
     const { items: allReviews, meta, loading } = useAppSelector((state) => state.reviews);
+    const loadMoreButtonRef = useRef<HTMLDivElement>(null);
 
     const searchParams = useSearchParams();
 
@@ -197,8 +198,10 @@ export default function CheckerPage() {
     const [profileFilter, setProfileFilter] = useState("all");
     const [profiles, setProfiles] = useState<{ id: string; businessName: string }[]>([]);
     const [search, setSearch] = useState("");
+    const [emailSearch, setEmailSearch] = useState("");
     // PERFORMANCE: Debounce search to reduce API calls by 90%
     const [debouncedSearch] = useDebounce(search, 300);
+    const [debouncedEmailSearch] = useDebounce(emailSearch, 300);
     const [showArchived, setShowArchived] = useState(false);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [isBulkProcessing, setIsBulkProcessing] = useState(false);
@@ -254,6 +257,11 @@ export default function CheckerPage() {
             return false;
         }
 
+        // Email Filter
+        if (debouncedEmailSearch && !r.emailUsed?.toLowerCase().includes(debouncedEmailSearch.toLowerCase())) {
+            return false;
+        }
+
         return true;
     });
 
@@ -261,9 +269,9 @@ export default function CheckerPage() {
     const displayedReviews = allFilteredReviews.slice(0, displayedCount);
 
     // Load More function
-    const loadMore = () => {
+    const loadMore = useCallback(() => {
         setDisplayedCount(prev => Math.min(prev + 20, allFilteredReviews.length));
-    };
+    }, [allFilteredReviews.length]);
 
     // Check if we have more reviews to load
     const hasMore = displayedCount < allFilteredReviews.length;
@@ -311,7 +319,7 @@ export default function CheckerPage() {
     useEffect(() => {
         setSelectedIds([]);
         setDisplayedCount(20); // Reset to show first 20
-    }, [statusFilter, checkStatusFilter, profileFilter, debouncedSearch, showArchived]);
+    }, [statusFilter, checkStatusFilter, profileFilter, debouncedSearch, debouncedEmailSearch, showArchived]);
 
     useEffect(() => {
         fetchReviewsData();
@@ -526,6 +534,16 @@ export default function CheckerPage() {
                         placeholder="Search reviews..."
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
+                        className="pl-9 bg-slate-800/50 border-slate-700 text-white w-full"
+                    />
+                </div>
+
+                <div className="relative col-span-2 md:col-span-1 md:min-w-[220px]">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <Input
+                        placeholder="Search by email..."
+                        value={emailSearch}
+                        onChange={(e) => setEmailSearch(e.target.value)}
                         className="pl-9 bg-slate-800/50 border-slate-700 text-white w-full"
                     />
                 </div>
@@ -750,10 +768,32 @@ export default function CheckerPage() {
             ) : displayedReviews.length > 50 ? (
                 // OPTIMIZATION: Use virtual scrolling for large lists (>50 items)
                 // This renders only visible items, reducing DOM nodes from 1000+ to ~20
-                // Fixes 95% RAM usage issue
+                // Fixes 95% RAM usage issue and scroll break
                 <VirtualizedReviewList
                     reviews={displayedReviews}
                     itemHeight={150}
+                    hasMore={hasMore}
+                    loadMoreButton={
+                        <div className="flex justify-center">
+                            <Button
+                                onClick={loadMore}
+                                variant="outline"
+                                className="border-indigo-500 text-indigo-400 hover:bg-indigo-500/10"
+                                disabled={isLoading}
+                            >
+                                {isLoading ? (
+                                    <>
+                                        <Loader2 size={16} className="mr-2 animate-spin" />
+                                        Loading...
+                                    </>
+                                ) : (
+                                    <>
+                                        Load More ({allFilteredReviews.length - displayedCount} remaining)
+                                    </>
+                                )}
+                            </Button>
+                        </div>
+                    }
                     renderItem={(review) => {
                         const isSelected = selectedIds.includes(review.id);
                         const isLiveOrDone = review.status === "LIVE" || review.status === "DONE";
@@ -1131,7 +1171,7 @@ export default function CheckerPage() {
 
             {/* Load More Button */}
             {hasMore && !isChecking && (
-                <div className="mt-6 flex justify-center">
+                <div ref={loadMoreButtonRef} className="mt-6 flex justify-center">
                     <Button
                         onClick={loadMore}
                         variant="outline"

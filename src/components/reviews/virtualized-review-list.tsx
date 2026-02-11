@@ -8,6 +8,9 @@ interface VirtualizedReviewListProps {
   renderItem: (review: Review, index: number) => React.ReactNode;
   itemHeight?: number;
   overscan?: number;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
+  loadMoreButton?: React.ReactNode;
 }
 
 /**
@@ -27,6 +30,8 @@ export function VirtualizedReviewList({
   renderItem,
   itemHeight = 150, // Approximate height of each review card
   overscan = 5, // Number of items to render above/below viewport
+  hasMore = false,
+  loadMoreButton,
 }: VirtualizedReviewListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -93,7 +98,7 @@ export function VirtualizedReviewList({
     return reviews.slice(visibleStart, visibleEnd);
   }, [reviews, visibleStart, visibleEnd]);
 
-  const totalHeight = reviews.length * itemHeight;
+  const totalHeight = reviews.length * itemHeight + (hasMore ? 100 : 0); // Add extra space for load more button
 
   return (
     <div
@@ -120,6 +125,20 @@ export function VirtualizedReviewList({
             )}
           </div>
         </div>
+        {/* Load More Button at the end */}
+        {hasMore && loadMoreButton && (
+          <div
+            style={{
+              position: "absolute",
+              top: reviews.length * itemHeight,
+              left: 0,
+              right: 0,
+              padding: "1.5rem 0",
+            }}
+          >
+            {loadMoreButton}
+          </div>
+        )}
       </div>
     </div>
   );
