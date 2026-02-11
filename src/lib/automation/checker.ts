@@ -110,12 +110,10 @@ export class LiveChecker {
       const userAgent = this.getRandomUserAgent();
       console.log(`🎭 Using User-Agent: ${userAgent.substring(0, 50)}...`);
 
-      // Context with random user agent + ENGLISH LOCALE
+      // Context with random user agent
       const context = await browser.newContext({
         viewport: { width: 1280, height: 720 },
-        userAgent: userAgent,
-        locale: 'en-US',  // Force English language
-        timezoneId: 'America/New_York'  // US timezone
+        userAgent: userAgent
       });
 
       page = await context.newPage();
@@ -148,14 +146,7 @@ export class LiveChecker {
         }
       }
 
-      // FORCE ENGLISH LANGUAGE: Add &hl=en parameter to URL
-      if (!finalUrl.includes('hl=')) {
-        const separator = finalUrl.includes('?') ? '&' : '?';
-        finalUrl += `${separator}hl=en`;
-        console.log(`🌐 Forced English locale: &hl=en`);
-      }
-
-      // Navigation with aggressive fallback strategy
+      // Navigation
       console.log(`🌐 Navigating to: ${finalUrl.substring(0, 80)}...`);
 
       let navigationSuccess = false;
@@ -316,149 +307,6 @@ export class LiveChecker {
     }
   }
 
-  /**
-   * Screenshot-based detection (FALLBACK)
-   * Based on actual LIVE vs MISSING screenshots provided by user
-   */
-  private async screenshotBasedDetection(page: Page): Promise<boolean> {
-    try {
-      console.log("📸 Taking screenshot for analysis...");
-
-      // Take screenshot
-      const screenshot = await page.screenshot({ type: 'png', fullPage: false });
-
-      // Analyze page content based on actual examples
-      const pageInfo = await page.evaluate(() => {
-        const bodyText = document.body.innerText;
-        const bodyTextLower = bodyText.toLowerCase();
-
-        return {
-          // MISSING indicators - Multi-language support
-          hasMissingMessage:
-            // English
-            bodyTextLower.includes('this review is no longer available') ||
-            bodyTextLower.includes('review is no longer available') ||
-            bodyTextLower.includes('no longer available') ||
-            bodyTextLower.includes('not available') ||
-            bodyTextLower.includes('unavailable') ||
-
-            // Bangla (Bengali)
-            bodyText.includes('আর উপলব্ধ নেই') ||
-            bodyText.includes('পর্যালোচনা আর উপলব্ধ নেই') ||
-            bodyText.includes('পর্যালোচনাটি আর উপলব্ধ নেই') ||
-            bodyText.includes('এই পর্যালোচনা আর উপলব্ধ নেই') ||
-            bodyText.includes('এই পর্যালোচনাটি আর উপলব্ধ নেই') ||
-
-            // French (from user's LIVE screenshot)
-            bodyTextLower.includes('cet avis n\'est plus disponible') ||
-            bodyTextLower.includes('n\'est plus disponible') ||
-            bodyTextLower.includes('avis n\'est plus disponible') ||
-
-            // Spanish
-            bodyTextLower.includes('ya no está disponible') ||
-            bodyTextLower.includes('no está disponible') ||
-
-            // German
-            bodyTextLower.includes('nicht mehr verfügbar') ||
-            bodyTextLower.includes('ist nicht mehr verfügbar'),
-
-          // LIVE indicators (from your screenshot)
-          hasLikeButton: Array.from(document.querySelectorAll('button')).some(btn =>
-            btn.textContent?.toLowerCase().includes('like') ||
-            btn.getAttribute('aria-label')?.toLowerCase().includes('like')
-          ),
-
-          hasShareButton: Array.from(document.querySelectorAll('button')).some(btn =>
-            btn.textContent?.toLowerCase().includes('share') ||
-            btn.getAttribute('aria-label')?.toLowerCase().includes('share')
-          ),
-
-          hasStarRating: bodyText.includes('★') ||
-                        bodyText.includes('⭐') ||
-                        !!document.querySelector('[aria-label*="star"]') ||
-                        !!document.querySelector('[aria-label*="Star"]'),
-
-          hasReviewText: bodyTextLower.includes('visited in') ||
-                        bodyTextLower.includes('hours ago') ||
-                        bodyTextLower.includes('days ago') ||
-                        bodyTextLower.includes('weeks ago') ||
-                        bodyTextLower.includes('months ago') ||
-                        bodyTextLower.includes('years ago'),
-
-          // Additional checks
-          hasContent: document.body.scrollHeight > 400,
-          isGoogle: window.location.hostname.includes('google'),
-
-          // Debug info - EXTENDED for better debugging
-          textSample: bodyText.substring(0, 500),  // Increased from 200 to 500
-          fullTextLength: bodyText.length
-        };
-      });
-
-      console.log(`📊 Screenshot Analysis:`);
-      console.log(`   🚫 Missing message: ${pageInfo.hasMissingMessage ? 'YES ❌' : 'No'}`);
-      console.log(`   👍 Like button: ${pageInfo.hasLikeButton ? 'YES ✅' : 'No'}`);
-      console.log(`   🔗 Share button: ${pageInfo.hasShareButton ? 'YES ✅' : 'No'}`);
-      console.log(`   ⭐ Star rating: ${pageInfo.hasStarRating ? 'YES ✅' : 'No'}`);
-      console.log(`   📝 Review text: ${pageInfo.hasReviewText ? 'YES ✅' : 'No'}`);
-      console.log(`   📄 Full text length: ${pageInfo.fullTextLength} chars`);
-      console.log(`   📄 Text sample (first 300 chars):`);
-      console.log(`      "${pageInfo.textSample.substring(0, 300).replace(/\n/g, ' ')}..."`);
-
-      // SIMPLE LOGIC based on your examples:
-      // If "no longer available" message = MISSING
-      if (pageInfo.hasMissingMessage) {
-        console.log("❌ Screenshot analysis: MISSING (found 'no longer available' message)");
-
-        // Save screenshot for verification
-        const screenshotPath = `./public/screenshots/missing-${Date.now()}.png`;
-        try {
-          await fs.writeFile(screenshotPath, screenshot);
-          console.log(`💾 Screenshot saved: ${screenshotPath}`);
-        } catch (e) {
-          console.log("⚠️ Could not save screenshot");
-        }
-
-        return false;
-      }
-
-      // If has Like + Share buttons + stars = LIVE
-      const hasLiveIndicators = pageInfo.hasLikeButton &&
-                               pageInfo.hasShareButton &&
-                               pageInfo.hasStarRating;
-
-      if (hasLiveIndicators) {
-        console.log("✅ Screenshot analysis: LIVE (found Like+Share+Stars)");
-
-        // Save screenshot for verification
-        const screenshotPath = `./public/screenshots/live-${Date.now()}.png`;
-        try {
-          await fs.writeFile(screenshotPath, screenshot);
-          console.log(`💾 Screenshot saved: ${screenshotPath}`);
-        } catch (e) {
-          console.log("⚠️ Could not save screenshot");
-        }
-
-        return true;
-      }
-
-      // Fallback: If has review text + stars (even without buttons)
-      const hasMinimalIndicators = pageInfo.hasStarRating && pageInfo.hasReviewText;
-
-      if (hasMinimalIndicators) {
-        console.log("✅ Screenshot analysis: LIVE (found Stars+Review text)");
-        return true;
-      }
-
-      // Default: MISSING
-      console.log("❌ Screenshot analysis: MISSING (insufficient indicators)");
-      return false;
-
-    } catch (error) {
-      console.error("Screenshot detection failed:", error);
-      return false;
-    }
-  }
 
   /**
    * Verify if the review is present on the page
@@ -466,59 +314,19 @@ export class LiveChecker {
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      console.log("🔍 Waiting for page to fully render...");
+      console.log("🔍 Waiting for page to render...");
 
-      // Longer wait for Google Maps (production needs more time)
-      await page.waitForTimeout(5000); // Increased from 3s to 5s
+      // Wait for page to load
+      await page.waitForTimeout(3000);
 
-      console.log("🎯 Attempting DOM-based detection...");
+      console.log("🎯 Checking .Upo0Ec class...");
 
-      // Check for review presence with multiple strategies
-      const result = await page.evaluate(() => {
-        // Strategy 1: Check for .Upo0Ec (old class)
+      // SIMPLE: Only check .Upo0Ec class (100% working from before)
+      const isLive = await page.evaluate(() => {
         const upo0ec = document.querySelector('.Upo0Ec');
-
-        // Strategy 2: Check for any element with data-review-id attribute
-        const reviewIdElement = document.querySelector('[data-review-id]');
-
-        // Strategy 3: Check for review content indicators
-        const reviewText = document.querySelector('.wiI7pd');
-        const reviewRating = document.querySelector('[aria-label*="star"]');
-
-        // Strategy 4: Check for "Like" and "Share" buttons (visible in screenshot)
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const likeButton = buttons.find(btn =>
-          btn.textContent?.toLowerCase().includes('like') ||
-          btn.getAttribute('aria-label')?.toLowerCase().includes('like')
-        );
-        const shareButton = buttons.find(btn =>
-          btn.textContent?.toLowerCase().includes('share') ||
-          btn.getAttribute('aria-label')?.toLowerCase().includes('share')
-        );
-
-        // SIMPLE LOGIC: Only check STRONG indicators
-        // Strong indicators: .Upo0Ec, data-review-id, review text + rating, Like AND Share buttons
-        const isLive = !!(upo0ec || reviewIdElement ||
-                         (reviewText && reviewRating) ||
-                         (likeButton && shareButton)); // Need BOTH buttons
-
-        // Detailed logging
-        console.log(`[Browser] Strategy 1 - .Upo0Ec: ${upo0ec ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`[Browser] Strategy 2 - [data-review-id]: ${reviewIdElement ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`[Browser] Strategy 3 - Review text+rating: ${(reviewText && reviewRating) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`[Browser] Strategy 4 - Like+Share buttons: ${(likeButton && shareButton) ? 'BOTH FOUND ✅' : likeButton ? 'Only Like ⚠️' : shareButton ? 'Only Share ⚠️' : 'NOT FOUND ❌'}`);
-        console.log(`[Browser] 🎯 Final result: ${isLive ? 'LIVE ✅' : 'MISSING ❌'}`);
-
-        return isLive ? 'live' : 'missing';
+        console.log(`[Browser] .Upo0Ec: ${upo0ec ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
+        return !!upo0ec;
       });
-
-      let isLive = result === "live";
-
-      // FALLBACK: If DOM detection fails, use screenshot-based detection
-      if (!isLive) {
-        console.log("⚠️ DOM detection failed, trying screenshot-based detection...");
-        isLive = await this.screenshotBasedDetection(page);
-      }
 
       console.log(isLive ? "✅ Review is LIVE" : "❌ Review is MISSING");
 
