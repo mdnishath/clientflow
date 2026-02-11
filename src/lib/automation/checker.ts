@@ -13,6 +13,13 @@ import { browserPool } from "./browser-pool";
 
 export class LiveChecker {
   private config: AutomationConfig;
+  private userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+  ];
 
   constructor(config: Partial<AutomationConfig> = {}) {
     this.config = {
@@ -22,6 +29,15 @@ export class LiveChecker {
       headless: true,
       ...config,
     };
+  }
+
+  private getRandomUserAgent(): string {
+    return this.userAgents[Math.floor(Math.random() * this.userAgents.length)];
+  }
+
+  private async randomDelay(min: number = 1000, max: number = 3000): Promise<void> {
+    const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+    await new Promise(resolve => setTimeout(resolve, delay));
   }
 
   /**
@@ -90,10 +106,14 @@ export class LiveChecker {
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       });
 
-      // EXACT SAME CONTEXT AS WORKING EXPRESS APP
+      // Random User Agent to avoid bot detection
+      const userAgent = this.getRandomUserAgent();
+      console.log(`🎭 Using User-Agent: ${userAgent.substring(0, 50)}...`);
+
+      // Context with random user agent
       const context = await browser.newContext({
         viewport: { width: 1280, height: 720 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        userAgent: userAgent
       });
 
       page = await context.newPage();
@@ -108,6 +128,9 @@ export class LiveChecker {
 
       // RESOURCE BLOCKING: Exact same as working Express app
       await context.route('**/*.{png,jpg,jpeg,gif,svg,font,woff,woff2,mp4,pdf}', route => route.abort());
+
+      // Random delay before starting (anti-bot detection)
+      await this.randomDelay(500, 2000);
 
       // CRITICAL: Resolve short links FIRST before navigation
       let finalUrl = review.reviewLiveLink;
@@ -290,10 +313,12 @@ export class LiveChecker {
    */
   private async verifyReviewPresence(page: Page, reviewText?: string | null, expectedId?: string | null): Promise<boolean> {
     try {
-      console.log("🔍 Checking for .Upo0Ec...");
+      console.log("🔍 Waiting for page to fully render...");
 
-      // Wait for page to render
-      await page.waitForTimeout(3000);
+      // Longer wait for Google Maps (production needs more time)
+      await page.waitForTimeout(5000); // Increased from 3s to 5s
+
+      console.log("🎯 Checking for .Upo0Ec...");
 
       // ONLY CHECK .Upo0Ec - NOTHING ELSE
       const result = await page.evaluate(() => {
