@@ -21,10 +21,10 @@ export function DashboardHeaderActions() {
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
             <Dialog open={isDateDialogOpen} onOpenChange={setIsDateDialogOpen}>
                 <DialogTrigger asChild>
-                    <Button variant="outline" className="border-slate-700 w-full sm:w-auto">
+                    {/* <Button variant="outline" className="border-slate-700 w-full sm:w-auto">
                         <CalendarDays className="mr-2 h-4 w-4" />
                         Set Start Date
-                    </Button>
+                    </Button> */}
                 </DialogTrigger>
                 <UpdateStartDateButton />
             </Dialog>

@@ -38,6 +38,9 @@ import {
     CheckSquare,
     Square,
     Upload,
+    CheckCircle,
+    Download,
+    Filter,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -110,6 +113,48 @@ export default function ProfilesPage() {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
     const [deletingProfile, setDeletingProfile] = useState<Profile | null>(null);
+
+    const handleExportProfiles = async () => {
+        try {
+            const params = new URLSearchParams();
+
+            // Add filters
+            if (categoryFilter !== "all") params.set("category", categoryFilter);
+            if (search) params.set("search", search);
+            if (completionFilter === "completed") params.set("completed", "true");
+            else if (completionFilter === "incomplete") params.set("completed", "false");
+
+            const response = await fetch(`/api/profiles/export?${params}`);
+
+            if (!response.ok) {
+                throw new Error("Export failed");
+            }
+
+            // Get filename from headers
+            const contentDisposition = response.headers.get("Content-Disposition");
+            let filename = "Profiles_Export.xlsx";
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename="(.+)"/);
+                if (match) filename = match[1];
+            }
+
+            // Download file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            toast.success(`Exported ${filteredProfiles.length} profiles!`);
+        } catch (error) {
+            console.error("Export error:", error);
+            toast.error("Failed to export profiles");
+        }
+    };
 
     const handleBulkArchive = async () => {
         if (selectedIds.size === 0) return;
@@ -220,6 +265,7 @@ export default function ProfilesPage() {
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("all");
+    const [completionFilter, setCompletionFilter] = useState("all"); // all | completed | incomplete
 
     // Infinite scroll
     const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
@@ -264,12 +310,24 @@ export default function ProfilesPage() {
         }
     }, [search, categoryFilter]);
 
+    // Client-side filtering for completion status
+    const filteredProfiles = allProfiles.filter(profile => {
+        if (completionFilter === "completed") {
+            // Completed: has reviewOrdered AND liveCount >= reviewOrdered
+            return profile.reviewOrdered && profile.reviewOrdered > 0 && (profile.liveCount || 0) >= profile.reviewOrdered;
+        } else if (completionFilter === "incomplete") {
+            // Incomplete: either no order OR liveCount < reviewOrdered
+            return !profile.reviewOrdered || profile.reviewOrdered === 0 || (profile.liveCount || 0) < profile.reviewOrdered;
+        }
+        return true; // "all"
+    });
+
     // Infinite scroll logic
-    const profiles = allProfiles.slice(0, displayedCount);
-    const hasMore = displayedCount < allProfiles.length;
+    const profiles = filteredProfiles.slice(0, displayedCount);
+    const hasMore = displayedCount < filteredProfiles.length;
     const loadMore = useCallback(() => {
-        setDisplayedCount(prev => Math.min(prev + 20, allProfiles.length));
-    }, [allProfiles.length]);
+        setDisplayedCount(prev => Math.min(prev + 20, filteredProfiles.length));
+    }, [filteredProfiles.length]);
 
     const fetchCategories = async () => {
         try {
@@ -307,7 +365,7 @@ export default function ProfilesPage() {
 
     useEffect(() => {
         setDisplayedCount(20);
-    }, [search, categoryFilter]);
+    }, [search, categoryFilter, completionFilter]);
 
     const handleCreateProfile = async () => {
         if (!newProfile.businessName.trim()) {
@@ -562,6 +620,34 @@ export default function ProfilesPage() {
                             ))}
                         </SelectContent>
                     </Select>
+
+                    <Select value={completionFilter} onValueChange={setCompletionFilter}>
+                        <SelectTrigger className="w-[180px] bg-slate-800 border-slate-700 text-white">
+                            <Filter size={14} className="mr-2" />
+                            <SelectValue placeholder="All Profiles" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                            <SelectItem value="all">All Profiles</SelectItem>
+                            <SelectItem value="completed">
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle size={14} className="text-green-400" />
+                                    Completed
+                                </div>
+                            </SelectItem>
+                            <SelectItem value="incomplete">Incomplete</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportProfiles}
+                        disabled={filteredProfiles.length === 0}
+                        className="border-emerald-600/50 text-emerald-400 hover:bg-emerald-600/10 hover:text-emerald-300"
+                    >
+                        <Download size={16} className="mr-2" />
+                        Export ({filteredProfiles.length})
+                    </Button>
                 </div>
 
             </div>
