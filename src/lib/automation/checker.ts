@@ -148,6 +148,13 @@ export class LiveChecker {
         }
       }
 
+      // FORCE ENGLISH LANGUAGE: Add &hl=en parameter to URL
+      if (!finalUrl.includes('hl=')) {
+        const separator = finalUrl.includes('?') ? '&' : '?';
+        finalUrl += `${separator}hl=en`;
+        console.log(`🌐 Forced English locale: &hl=en`);
+      }
+
       // Navigation with aggressive fallback strategy
       console.log(`🌐 Navigating to: ${finalUrl.substring(0, 80)}...`);
 
@@ -326,10 +333,34 @@ export class LiveChecker {
         const bodyTextLower = bodyText.toLowerCase();
 
         return {
-          // MISSING indicators (from your screenshot)
-          hasMissingMessage: bodyTextLower.includes('this review is no longer available') ||
-                            bodyTextLower.includes('review is no longer available') ||
-                            bodyTextLower.includes('no longer available'),
+          // MISSING indicators - Multi-language support
+          hasMissingMessage:
+            // English
+            bodyTextLower.includes('this review is no longer available') ||
+            bodyTextLower.includes('review is no longer available') ||
+            bodyTextLower.includes('no longer available') ||
+            bodyTextLower.includes('not available') ||
+            bodyTextLower.includes('unavailable') ||
+
+            // Bangla (Bengali)
+            bodyText.includes('আর উপলব্ধ নেই') ||
+            bodyText.includes('পর্যালোচনা আর উপলব্ধ নেই') ||
+            bodyText.includes('পর্যালোচনাটি আর উপলব্ধ নেই') ||
+            bodyText.includes('এই পর্যালোচনা আর উপলব্ধ নেই') ||
+            bodyText.includes('এই পর্যালোচনাটি আর উপলব্ধ নেই') ||
+
+            // French (from user's LIVE screenshot)
+            bodyTextLower.includes('cet avis n\'est plus disponible') ||
+            bodyTextLower.includes('n\'est plus disponible') ||
+            bodyTextLower.includes('avis n\'est plus disponible') ||
+
+            // Spanish
+            bodyTextLower.includes('ya no está disponible') ||
+            bodyTextLower.includes('no está disponible') ||
+
+            // German
+            bodyTextLower.includes('nicht mehr verfügbar') ||
+            bodyTextLower.includes('ist nicht mehr verfügbar'),
 
           // LIVE indicators (from your screenshot)
           hasLikeButton: Array.from(document.querySelectorAll('button')).some(btn =>
@@ -358,8 +389,9 @@ export class LiveChecker {
           hasContent: document.body.scrollHeight > 400,
           isGoogle: window.location.hostname.includes('google'),
 
-          // Debug info
-          textSample: bodyText.substring(0, 200)
+          // Debug info - EXTENDED for better debugging
+          textSample: bodyText.substring(0, 500),  // Increased from 200 to 500
+          fullTextLength: bodyText.length
         };
       });
 
@@ -369,7 +401,9 @@ export class LiveChecker {
       console.log(`   🔗 Share button: ${pageInfo.hasShareButton ? 'YES ✅' : 'No'}`);
       console.log(`   ⭐ Star rating: ${pageInfo.hasStarRating ? 'YES ✅' : 'No'}`);
       console.log(`   📝 Review text: ${pageInfo.hasReviewText ? 'YES ✅' : 'No'}`);
-      console.log(`   📄 Text sample: "${pageInfo.textSample.substring(0, 80)}..."`);
+      console.log(`   📄 Full text length: ${pageInfo.fullTextLength} chars`);
+      console.log(`   📄 Text sample (first 300 chars):`);
+      console.log(`      "${pageInfo.textSample.substring(0, 300).replace(/\n/g, ' ')}..."`);
 
       // SIMPLE LOGIC based on your examples:
       // If "no longer available" message = MISSING
