@@ -329,27 +329,45 @@ export class LiveChecker {
           // Check for common review phrases
           textContent: document.body.innerText.toLowerCase(),
           // Check if it's a Google page
-          isGoogle: window.location.hostname.includes('google')
+          isGoogle: window.location.hostname.includes('google'),
+          // Check URL for review indicators
+          urlHasReview: window.location.href.includes('/reviews/') || window.location.href.includes('!1s'),
+          // Check for SVG elements (likely star icons)
+          hasSvgElements: document.querySelectorAll('svg').length > 5,
+          // Check for role="img" elements (likely icons)
+          hasImageRoles: document.querySelectorAll('[role="img"]').length > 3
         };
       });
 
       console.log(`📊 Page analysis: Height=${pageInfo.bodyHeight}px, Width=${pageInfo.bodyWidth}px`);
       console.log(`⭐ Has star symbols: ${pageInfo.hasStars}`);
+      console.log(`🎨 Has SVG elements: ${pageInfo.hasSvgElements}`);
+      console.log(`🖼️ Has image roles: ${pageInfo.hasImageRoles}`);
       console.log(`🌐 Is Google domain: ${pageInfo.isGoogle}`);
+      console.log(`🔗 URL has review: ${pageInfo.urlHasReview}`);
 
-      // SIMPLE HEURISTIC: If page is Google Maps AND has content AND has review indicators
+      // LENIENT HEURISTIC: Multiple indicators that this is a review page
       const hasContent = pageInfo.bodyHeight > 500 && pageInfo.bodyWidth > 800;
-      const hasReviewIndicators = pageInfo.hasStars ||
-                                  pageInfo.textContent.includes('review') ||
-                                  pageInfo.textContent.includes('rating') ||
-                                  pageInfo.textContent.includes('star') ||
-                                  pageInfo.textContent.includes('visited') ||
-                                  pageInfo.textContent.includes('ago');
 
-      const isLikelyReview = pageInfo.isGoogle && hasContent && hasReviewIndicators;
+      // Check for review indicators (more lenient - ANY of these suggests review page)
+      const hasTextIndicators = pageInfo.hasStars ||
+                                pageInfo.textContent.includes('review') ||
+                                pageInfo.textContent.includes('rating') ||
+                                pageInfo.textContent.includes('star') ||
+                                pageInfo.textContent.includes('visited') ||
+                                pageInfo.textContent.includes('ago');
+
+      // Check for visual indicators (SVG stars, image roles)
+      const hasVisualIndicators = pageInfo.hasSvgElements || pageInfo.hasImageRoles;
+
+      // LENIENT: If it's Google + has content + URL has review pattern, likely LIVE
+      // OR if it has both text and visual indicators
+      const isLikelyReview = pageInfo.isGoogle && hasContent &&
+                             (pageInfo.urlHasReview || (hasTextIndicators && hasVisualIndicators));
 
       if (isLikelyReview) {
-        console.log("✅ Screenshot analysis: Looks like a review page!");
+        console.log("✅ Screenshot analysis: LIVE detected!");
+        console.log(`   → Reason: ${pageInfo.urlHasReview ? 'URL has review pattern' : 'Text + Visual indicators present'}`);
         // Save screenshot for verification if needed
         const screenshotPath = `./public/screenshots/review-${Date.now()}.png`;
         try {
@@ -360,7 +378,8 @@ export class LiveChecker {
         }
         return true;
       } else {
-        console.log("❌ Screenshot analysis: Does not look like a review page");
+        console.log("❌ Screenshot analysis: MISSING");
+        console.log(`   → Missing: ${!pageInfo.isGoogle ? 'Not Google' : !hasContent ? 'Insufficient content' : 'No review indicators'}`);
         return false;
       }
     } catch (error) {
