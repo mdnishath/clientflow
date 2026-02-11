@@ -496,39 +496,18 @@ export class LiveChecker {
           btn.getAttribute('aria-label')?.toLowerCase().includes('share')
         );
 
-        // Strategy 5: Check for ANY text content that looks like a review
-        const bodyText = document.body.innerText.toLowerCase();
-        const hasReviewKeywords = bodyText.includes('review') ||
-                                  bodyText.includes('star') ||
-                                  bodyText.includes('visited') ||
-                                  bodyText.includes('ago') ||
-                                  bodyText.includes('rating');
-
-        // Strategy 6: Check URL contains review data
-        const urlHasReview = window.location.href.includes('/reviews/') ||
-                            window.location.href.includes('data=') ||
-                            window.location.href.includes('!1s');
-
-        // STRICTER LOGIC: Need STRONG indicators, not just URL + keywords
-        // Strong indicators: .Upo0Ec, data-review-id, review text + rating, Like/Share buttons
-        const hasStrongIndicator = !!(upo0ec || reviewIdElement ||
-                                     (reviewText && reviewRating) ||
-                                     (likeButton && shareButton)); // Need BOTH buttons
-
-        // Weak indicator: URL + keywords (not enough alone)
-        const hasWeakIndicator = urlHasReview && hasReviewKeywords;
-
-        // Decision: Need at least 1 strong indicator OR (URL + keywords + multiple weak signals)
-        const isLive = hasStrongIndicator || (hasWeakIndicator && (likeButton || shareButton));
+        // SIMPLE LOGIC: Only check STRONG indicators
+        // Strong indicators: .Upo0Ec, data-review-id, review text + rating, Like AND Share buttons
+        const isLive = !!(upo0ec || reviewIdElement ||
+                         (reviewText && reviewRating) ||
+                         (likeButton && shareButton)); // Need BOTH buttons
 
         // Detailed logging
         console.log(`[Browser] Strategy 1 - .Upo0Ec: ${upo0ec ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
         console.log(`[Browser] Strategy 2 - [data-review-id]: ${reviewIdElement ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
         console.log(`[Browser] Strategy 3 - Review text+rating: ${(reviewText && reviewRating) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`[Browser] Strategy 4 - Like/Share buttons: ${(likeButton || shareButton) ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`[Browser] Strategy 5 - Review keywords in text: ${hasReviewKeywords ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-        console.log(`[Browser] Strategy 6 - URL has review: ${urlHasReview ? 'YES ✅' : 'NO ❌'}`);
-        console.log(`[Browser] 🎯 Strong indicator: ${hasStrongIndicator ? 'YES ✅' : 'NO ❌'}`);
+        console.log(`[Browser] Strategy 4 - Like+Share buttons: ${(likeButton && shareButton) ? 'BOTH FOUND ✅' : likeButton ? 'Only Like ⚠️' : shareButton ? 'Only Share ⚠️' : 'NOT FOUND ❌'}`);
+        console.log(`[Browser] 🎯 Final result: ${isLive ? 'LIVE ✅' : 'MISSING ❌'}`);
 
         return isLive ? 'live' : 'missing';
       });
