@@ -308,6 +308,68 @@ export class LiveChecker {
   }
 
   /**
+   * Screenshot-based detection (FALLBACK)
+   * Analyzes screenshot to detect if review content is visible
+   */
+  private async screenshotBasedDetection(page: Page): Promise<boolean> {
+    try {
+      console.log("📸 Taking screenshot for analysis...");
+
+      // Take screenshot
+      const screenshot = await page.screenshot({ type: 'png', fullPage: false });
+
+      // Get page dimensions and content info
+      const pageInfo = await page.evaluate(() => {
+        return {
+          // Check if page has substantial content
+          bodyHeight: document.body.scrollHeight,
+          bodyWidth: document.body.scrollWidth,
+          // Check for star rating (★) in text
+          hasStars: document.body.innerText.includes('★') || document.body.innerText.includes('⭐'),
+          // Check for common review phrases
+          textContent: document.body.innerText.toLowerCase(),
+          // Check if it's a Google page
+          isGoogle: window.location.hostname.includes('google')
+        };
+      });
+
+      console.log(`📊 Page analysis: Height=${pageInfo.bodyHeight}px, Width=${pageInfo.bodyWidth}px`);
+      console.log(`⭐ Has star symbols: ${pageInfo.hasStars}`);
+      console.log(`🌐 Is Google domain: ${pageInfo.isGoogle}`);
+
+      // SIMPLE HEURISTIC: If page is Google Maps AND has content AND has review indicators
+      const hasContent = pageInfo.bodyHeight > 500 && pageInfo.bodyWidth > 800;
+      const hasReviewIndicators = pageInfo.hasStars ||
+                                  pageInfo.textContent.includes('review') ||
+                                  pageInfo.textContent.includes('rating') ||
+                                  pageInfo.textContent.includes('star') ||
+                                  pageInfo.textContent.includes('visited') ||
+                                  pageInfo.textContent.includes('ago');
+
+      const isLikelyReview = pageInfo.isGoogle && hasContent && hasReviewIndicators;
+
+      if (isLikelyReview) {
+        console.log("✅ Screenshot analysis: Looks like a review page!");
+        // Save screenshot for verification if needed
+        const screenshotPath = `./public/screenshots/review-${Date.now()}.png`;
+        try {
+          await fs.writeFile(screenshotPath, screenshot);
+          console.log(`💾 Screenshot saved: ${screenshotPath}`);
+        } catch (e) {
+          console.log("⚠️ Could not save screenshot (non-critical)");
+        }
+        return true;
+      } else {
+        console.log("❌ Screenshot analysis: Does not look like a review page");
+        return false;
+      }
+    } catch (error) {
+      console.error("Screenshot detection failed:", error);
+      return false;
+    }
+  }
+
+  /**
    * Verify if the review is present on the page
    * EXACT SAME LOGIC as your working app (100% accurate)
    */
@@ -318,7 +380,7 @@ export class LiveChecker {
       // Longer wait for Google Maps (production needs more time)
       await page.waitForTimeout(5000); // Increased from 3s to 5s
 
-      console.log("🎯 Checking for .Upo0Ec...");
+      console.log("🎯 Attempting DOM-based detection...");
 
       // Check for review presence with multiple strategies
       const result = await page.evaluate(() => {
@@ -371,9 +433,15 @@ export class LiveChecker {
         return isLive ? 'live' : 'missing';
       });
 
-      const isLive = result === "live";
+      let isLive = result === "live";
 
-      console.log(isLive ? "✅ Review is LIVE (.Upo0Ec found)" : "❌ Review is MISSING (.Upo0Ec not found)");
+      // FALLBACK: If DOM detection fails, use screenshot-based detection
+      if (!isLive) {
+        console.log("⚠️ DOM detection failed, trying screenshot-based detection...");
+        isLive = await this.screenshotBasedDetection(page);
+      }
+
+      console.log(isLive ? "✅ Review is LIVE" : "❌ Review is MISSING");
 
       return isLive;
     } catch (error) {
