@@ -493,7 +493,7 @@ export default function CheckerPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
                     <Suspense fallback={<div className="h-9 w-20"></div>}>
-                        <ExportButton />
+                        <ExportButton currentStatusFilter={statusFilter} />
                     </Suspense>
                     {selectedIds.length > 0 && (
                         <Button
