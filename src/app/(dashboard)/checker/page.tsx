@@ -765,10 +765,10 @@ export default function CheckerPage() {
                         <p className="text-slate-400 font-medium">No reviews found</p>
                     </CardContent>
                 </Card>
-            ) : displayedReviews.length > 50 ? (
-                // OPTIMIZATION: Use virtual scrolling for large lists (>50 items)
+            ) : displayedReviews.length > 200 ? (
+                // OPTIMIZATION: Use virtual scrolling for very large lists (>200 items)
                 // This renders only visible items, reducing DOM nodes from 1000+ to ~20
-                // Fixes 95% RAM usage issue and scroll break
+                // For <200 items, use normal scrolling for better UX
                 <VirtualizedReviewList
                     reviews={displayedReviews}
                     itemHeight={150}
