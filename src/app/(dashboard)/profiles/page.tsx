@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import InfiniteScroll from "react-infinite-scroll-component";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -81,7 +82,6 @@ interface Client {
 
 export default function ProfilesPage() {
     const { can, isAdmin } = useAuth();
-    const [profiles, setProfiles] = useState<Profile[]>([]);
 
     // Selection State
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -221,11 +221,10 @@ export default function ProfilesPage() {
     const [search, setSearch] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("all");
 
-    // Pagination
-    const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
+    // Infinite scroll
+    const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
+    const [displayedCount, setDisplayedCount] = useState(20);
     const [total, setTotal] = useState(0);
-    const limit = 20;
 
     // New profile dialog
     const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -246,8 +245,7 @@ export default function ProfilesPage() {
             setLoading(true);
             const params = new URLSearchParams({
                 fullData: "true",
-                page: page.toString(),
-                limit: limit.toString(),
+                limit: "5000",
             });
 
             if (search) params.set("search", search);
@@ -257,15 +255,21 @@ export default function ProfilesPage() {
             if (!res.ok) throw new Error("Failed to fetch");
             const data = await res.json();
 
-            setProfiles(data.profiles || data);
-            setTotalPages(data.totalPages || 1);
+            setAllProfiles(data.profiles || data);
             setTotal(data.total || data.length || 0);
         } catch {
             toast.error("Failed to load profiles");
         } finally {
             setLoading(false);
         }
-    }, [page, search, categoryFilter]);
+    }, [search, categoryFilter]);
+
+    // Infinite scroll logic
+    const profiles = allProfiles.slice(0, displayedCount);
+    const hasMore = displayedCount < allProfiles.length;
+    const loadMore = useCallback(() => {
+        setDisplayedCount(prev => Math.min(prev + 20, allProfiles.length));
+    }, [allProfiles.length]);
 
     const fetchCategories = async () => {
         try {
@@ -302,7 +306,7 @@ export default function ProfilesPage() {
     }, [fetchProfiles]);
 
     useEffect(() => {
-        setPage(1);
+        setDisplayedCount(20);
     }, [search, categoryFilter]);
 
     const handleCreateProfile = async () => {
@@ -589,8 +593,24 @@ export default function ProfilesPage() {
                     </Card>
                 ) : (
                     <>
-                        {/* Profiles Grid - Unified ProfileCard */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {/* Profiles Grid - Unified ProfileCard with Infinite Scroll */}
+                        <InfiniteScroll
+                            dataLength={profiles.length}
+                            next={loadMore}
+                            hasMore={hasMore}
+                            loader={
+                                <div className="col-span-full text-center py-4 text-slate-400 text-sm">
+                                    <Loader2 className="inline-block mr-2 h-4 w-4 animate-spin" />
+                                    Loading more profiles...
+                                </div>
+                            }
+                            endMessage={
+                                <div className="col-span-full text-center py-4 text-slate-500 text-sm">
+                                    ✓ All {allProfiles.length} profiles loaded
+                                </div>
+                            }
+                            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+                        >
                             {profiles.map((profile) => (
                                 <ProfileCard
                                     key={profile.id}
@@ -607,42 +627,7 @@ export default function ProfilesPage() {
                                     isAdmin={isAdmin}
                                 />
                             ))}
-                        </div>
-
-                        {/* Pagination */}
-                        {
-                            totalPages > 1 && (
-                                <div className="flex items-center justify-between">
-                                    <p className="text-sm text-slate-400">
-                                        Showing {(page - 1) * limit + 1} - {Math.min(page * limit, total)} of{" "}
-                                        {total}
-                                    </p>
-                                    <div className="flex items-center gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                            disabled={page === 1}
-                                            className="border-slate-600 text-slate-300 hover:bg-slate-700"
-                                        >
-                                            <ChevronLeft className="h-4 w-4" />
-                                        </Button>
-                                        <span className="text-sm text-slate-300">
-                                            Page {page} of {totalPages}
-                                        </span>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                                            disabled={page >= totalPages}
-                                            className="border-slate-600 text-slate-300 hover:bg-slate-700"
-                                        >
-                                            <ChevronRight className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            )
-                        }
+                        </InfiniteScroll>
                     </>
                 )
             }

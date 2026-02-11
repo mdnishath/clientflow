@@ -14,7 +14,8 @@
       "Bash(git push:*)",
       "Bash(npx tsc:*)",
       "Bash(ager moto client side kore dao just .Upo0Ec check hobe 100% working age)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []
