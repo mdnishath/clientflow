@@ -39,7 +39,7 @@ import {
 import { ReviewForm } from "@/components/reviews/review-form";
 import { ReviewGeneratorModal } from "@/components/reviews/review-generator-modal";
 import { CopyButton } from "@/components/ui/copy-button";
-import { ExportButton } from "@/components/reviews/export-button";
+import { AdvancedExportButton } from "@/components/reviews/advanced-export-button";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
@@ -612,7 +612,17 @@ export default function ReviewsPage() {
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
-                    <ExportButton />
+                    <AdvancedExportButton
+                        statusFilter={statusFilter}
+                        profileFilter={profileFilter}
+                        categoryFilter={categoryFilter}
+                        clientFilter={clientFilter}
+                        dueDateFilter={dueDateFilter}
+                        search={search}
+                        showArchived={showArchived}
+                        selectedIds={Array.from(selectedIds)}
+                        totalFilteredCount={filteredReviews.length}
+                    />
                     {can.createReviews && (
                         <>
                             <Button

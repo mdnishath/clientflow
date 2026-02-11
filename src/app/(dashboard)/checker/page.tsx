@@ -45,7 +45,7 @@ import { useBatchCheck } from "@/hooks/use-batch-check";
 
 // PERFORMANCE: Lazy load heavy components (40% faster initial load)
 // These components are only loaded when needed
-const ExportButton = lazy(() => import("@/components/reviews/export-button").then(m => ({ default: m.ExportButton })));
+const AdvancedExportButton = lazy(() => import("@/components/reviews/advanced-export-button").then(m => ({ default: m.AdvancedExportButton })));
 const ReviewForm = lazy(() => import("@/components/reviews/review-form").then(m => ({ default: m.ReviewForm })));
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
@@ -493,7 +493,16 @@ export default function CheckerPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
                     <Suspense fallback={<div className="h-9 w-20"></div>}>
-                        <ExportButton currentStatusFilter={statusFilter} />
+                        <AdvancedExportButton
+                            statusFilter={statusFilter}
+                            checkStatusFilter={checkStatusFilter}
+                            profileFilter={profileFilter}
+                            emailSearch={emailSearch}
+                            search={search}
+                            showArchived={showArchived}
+                            selectedIds={selectedIds}
+                            totalFilteredCount={allFilteredReviews.length}
+                        />
                     </Suspense>
                     {selectedIds.length > 0 && (
                         <Button
