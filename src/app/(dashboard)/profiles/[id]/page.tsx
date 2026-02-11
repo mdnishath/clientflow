@@ -42,7 +42,7 @@ import {
 import { ProfileForm } from "@/components/profiles/profile-form";
 import { ReviewForm } from "@/components/reviews/review-form";
 import { CopyButton } from "@/components/ui/copy-button";
-import { ExportButton } from "@/components/reviews/export-button";
+import { AdvancedExportButton } from "@/components/reviews/advanced-export-button";
 import { toast } from "sonner";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { fetchProfile, clearProfile } from "@/lib/features/profileSlice";
@@ -525,7 +525,14 @@ export default function ProfileDetailPage() {
                     )}
                 </div>
                 <div className="flex items-center gap-2">
-                    <ExportButton />
+                    <AdvancedExportButton
+                        statusFilter={statusFilter}
+                        profileFilter={profileId}
+                        search={search}
+                        showArchived={showArchived}
+                        selectedIds={Array.from(selectedIds)}
+                        totalFilteredCount={reviews.length}
+                    />
                     {/* Hide Add Review when order is filled */}
                     {(profile.reviewOrdered === 0 || profile.liveCount < profile.reviewOrdered) && (
                         <Button
