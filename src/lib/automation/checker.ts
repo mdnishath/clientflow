@@ -17,7 +17,7 @@ export class LiveChecker {
   constructor(config: Partial<AutomationConfig> = {}) {
     this.config = {
       maxConcurrency: 3,
-      timeout: 30000, // OPTIMIZED: Reduced from 45s to 30s for faster checks
+      timeout: 60000, // Increased to 60s for slow redirects and Google Maps loading
       screenshotDir: "./public/screenshots",
       headless: true,
       ...config,
@@ -109,36 +109,49 @@ export class LiveChecker {
       // RESOURCE BLOCKING: Exact same as working Express app
       await context.route('**/*.{png,jpg,jpeg,gif,svg,font,woff,woff2,mp4,pdf}', route => route.abort());
 
-      // Navigation with fallback strategy
+      // Navigation with aggressive fallback strategy
       console.log(`🌐 Navigating to: ${review.reviewLiveLink.substring(0, 80)}...`);
 
+      let navigationSuccess = false;
+
+      // Strategy 1: Try domcontentloaded (most reliable for Google Maps)
       try {
-        // Try networkidle first (best for Google Maps)
         await page.goto(review.reviewLiveLink, {
-          waitUntil: "networkidle",
-          timeout: 30000,
+          waitUntil: "domcontentloaded",
+          timeout: 45000, // Increased from 20s to 45s for slow redirects
         });
-        console.log(`✓ Navigation successful (networkidle)`);
-      } catch (error) {
-        // Fallback: If networkidle times out, try domcontentloaded
-        console.log(`⚠ Network not idle, trying domcontentloaded...`);
+        console.log(`✓ Navigation successful (domcontentloaded)`);
+        // Wait for Google Maps dynamic content
+        await page.waitForTimeout(3000);
+        navigationSuccess = true;
+      } catch (error1) {
+        console.log(`⚠ DOM not loaded, trying load...`);
+
+        // Strategy 2: Try load event
         try {
           await page.goto(review.reviewLiveLink, {
-            waitUntil: "domcontentloaded",
-            timeout: 20000,
+            waitUntil: "load",
+            timeout: 45000,
           });
-          console.log(`✓ Navigation successful (domcontentloaded)`);
-          // Wait a bit for dynamic content
+          console.log(`✓ Navigation successful (load)`);
           await page.waitForTimeout(2000);
+          navigationSuccess = true;
         } catch (error2) {
-          // Last resort: navigate and wait
-          console.log(`⚠ DOM not loaded, last resort navigation...`);
-          await page.goto(review.reviewLiveLink, {
-            waitUntil: "commit",
-            timeout: 15000,
-          });
-          await page.waitForTimeout(3000);
-          console.log(`✓ Navigation successful (commit + wait)`);
+          console.log(`⚠ Load failed, trying commit (last resort)...`);
+
+          // Strategy 3: Just commit and wait
+          try {
+            await page.goto(review.reviewLiveLink, {
+              waitUntil: "commit",
+              timeout: 30000,
+            });
+            await page.waitForTimeout(5000); // Wait longer for page to render
+            console.log(`✓ Navigation successful (commit + 5s wait)`);
+            navigationSuccess = true;
+          } catch (error3) {
+            // If all strategies fail, throw the original error
+            throw error1;
+          }
         }
       }
 
