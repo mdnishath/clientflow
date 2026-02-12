@@ -7,23 +7,20 @@ import {
     Search,
     MoreVertical,
     Eye,
-    Edit,
     Trash2,
     Shield,
-    ShieldOff,
     Key,
-    TrendingUp,
-    Star,
     Award,
-    Zap,
-    CheckCircle,
-    XCircle,
     Loader2,
     Grid,
     List,
     UserCheck,
-    Clock,
-    Target
+    Target,
+    BarChart3,
+    PieChart,
+    Activity,
+    Briefcase,
+    TrendingUp
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +37,7 @@ import {
     DropdownMenuTrigger,
     DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Worker {
     id: string;
@@ -51,12 +49,81 @@ interface Worker {
     canManageProfiles: boolean;
     createdAt: string;
     stats?: {
-        totalLive: number;
-        last30Days: number;
-        avgCompletionDays: number;
-        performanceScore: number;
+        created: number;
+        updated: number;
+        liveCount: number;
+        totalTouched: number;
+        successRate: number;
+        thisWeek: number;
+        thisMonth: number;
+        statusBreakdown: Array<{ status: string; count: number }>;
+        dailyStats: Array<{ date: string; total: number }>;
+        projectWiseStats: Array<{
+            clientId: string;
+            clientName: string;
+            reviewCount: number;
+            profileCount: number;
+            profiles: string[];
+        }>;
     };
 }
+
+// Simple MiniChart Component for Activity Visualization
+const MiniChart = ({ data }: { data: Array<{ date: string; total: number }> }) => {
+    if (!data || data.length === 0) return <div className="text-xs text-slate-500">No data</div>;
+
+    const maxValue = Math.max(...data.map(d => d.total), 1);
+    const width = 200;
+    const height = 40;
+    const barWidth = width / Math.min(data.length, 14);
+
+    return (
+        <div className="flex items-end gap-0.5" style={{ height: `${height}px`, width: `${width}px` }}>
+            {data.slice(-14).map((item, idx) => {
+                const barHeight = (item.total / maxValue) * height;
+                return (
+                    <div
+                        key={idx}
+                        className="bg-gradient-to-t from-blue-500 to-cyan-400 rounded-sm transition-all hover:opacity-80 flex-1"
+                        style={{
+                            height: `${barHeight || 2}px`,
+                        }}
+                        title={`${new Date(item.date).toLocaleDateString()}: ${item.total} reviews`}
+                    />
+                );
+            })}
+        </div>
+    );
+};
+
+// Status Pie Chart Component
+const StatusPieChart = ({ data }: { data: Array<{ status: string; count: number }> }) => {
+    if (!data || data.length === 0) return null;
+
+    const total = data.reduce((sum, item) => sum + item.count, 0);
+    const statusColors: Record<string, string> = {
+        LIVE: "bg-emerald-500",
+        DRAFT: "bg-blue-500",
+        PENDING: "bg-amber-500",
+        REJECTED: "bg-red-500",
+    };
+
+    return (
+        <div className="space-y-2">
+            {data.map((item) => {
+                const percentage = ((item.count / total) * 100).toFixed(1);
+                return (
+                    <div key={item.status} className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${statusColors[item.status] || "bg-slate-500"}`} />
+                        <span className="text-xs text-slate-400 flex-1">{item.status}</span>
+                        <span className="text-xs font-medium text-white">{percentage}%</span>
+                        <span className="text-xs text-slate-500">({item.count})</span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
 
 export default function WorkersPage() {
     const [workers, setWorkers] = useState<Worker[]>([]);
@@ -64,6 +131,7 @@ export default function WorkersPage() {
     const [search, setSearch] = useState("");
     const [isLoading, setIsLoading] = useState(true);
     const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+    const [detailsWorker, setDetailsWorker] = useState<Worker | null>(null);
 
     // Create Worker Dialog
     const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -104,7 +172,7 @@ export default function WorkersPage() {
                         try {
                             const statsRes = await fetch(`/api/admin/workers/${worker.id}/stats`);
                             if (statsRes.ok) {
-                                const stats = await statsRes.json();
+                                const { stats } = await statsRes.json();
                                 return { ...worker, stats };
                             }
                         } catch (error) {
@@ -262,9 +330,9 @@ export default function WorkersPage() {
     // Stats calculation
     const stats = {
         total: workers.length,
-        avgPerformance: workers.reduce((sum, w) => sum + (w.stats?.performanceScore || 0), 0) / (workers.length || 1),
-        totalLive: workers.reduce((sum, w) => sum + (w.stats?.totalLive || 0), 0),
-        activeWorkers: workers.filter(w => (w.stats?.last30Days || 0) > 0).length,
+        avgPerformance: workers.reduce((sum, w) => sum + (w.stats?.successRate || 0), 0) / (workers.length || 1),
+        totalLive: workers.reduce((sum, w) => sum + (w.stats?.liveCount || 0), 0),
+        activeWorkers: workers.filter(w => (w.stats?.thisMonth || 0) > 0).length,
     };
 
     return (
@@ -311,7 +379,7 @@ export default function WorkersPage() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-cyan-300 font-medium">Active (30d)</p>
+                                <p className="text-sm text-cyan-300 font-medium">Active This Month</p>
                                 <p className="text-3xl font-bold text-white mt-2">{stats.activeWorkers}</p>
                             </div>
                             <div className="p-3 bg-cyan-500/20 rounded-xl">
@@ -325,7 +393,7 @@ export default function WorkersPage() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-emerald-300 font-medium">Total Live</p>
+                                <p className="text-sm text-emerald-300 font-medium">Total Live Reviews</p>
                                 <p className="text-3xl font-bold text-white mt-2">{stats.totalLive}</p>
                             </div>
                             <div className="p-3 bg-emerald-500/20 rounded-xl">
@@ -339,7 +407,7 @@ export default function WorkersPage() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-amber-300 font-medium">Avg Performance</p>
+                                <p className="text-sm text-amber-300 font-medium">Avg Success Rate</p>
                                 <p className="text-3xl font-bold text-white mt-2">{Math.round(stats.avgPerformance)}%</p>
                             </div>
                             <div className="p-3 bg-amber-500/20 rounded-xl">
@@ -448,6 +516,13 @@ export default function WorkersPage() {
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800">
                                             <DropdownMenuItem
+                                                onClick={() => setDetailsWorker(worker)}
+                                                className="text-slate-300 hover:text-white cursor-pointer"
+                                            >
+                                                <Eye size={14} className="mr-2" />
+                                                View Details
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
                                                 onClick={() => handleEditPermissions(worker)}
                                                 className="text-slate-300 hover:text-white cursor-pointer"
                                             >
@@ -477,24 +552,37 @@ export default function WorkersPage() {
                             <CardContent className="space-y-4">
                                 {/* Performance Stats */}
                                 {worker.stats && (
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="bg-slate-800/50 rounded-lg p-3">
-                                            <p className="text-xs text-slate-400">Total Live</p>
-                                            <p className="text-lg font-bold text-blue-400 mt-1">{worker.stats.totalLive}</p>
+                                    <>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="bg-slate-800/50 rounded-lg p-3">
+                                                <p className="text-xs text-slate-400">Total Live</p>
+                                                <p className="text-lg font-bold text-emerald-400 mt-1">{worker.stats.liveCount}</p>
+                                            </div>
+                                            <div className="bg-slate-800/50 rounded-lg p-3">
+                                                <p className="text-xs text-slate-400">This Month</p>
+                                                <p className="text-lg font-bold text-cyan-400 mt-1">{worker.stats.thisMonth}</p>
+                                            </div>
+                                            <div className="bg-slate-800/50 rounded-lg p-3">
+                                                <p className="text-xs text-slate-400">This Week</p>
+                                                <p className="text-lg font-bold text-blue-400 mt-1">{worker.stats.thisWeek}</p>
+                                            </div>
+                                            <div className="bg-slate-800/50 rounded-lg p-3">
+                                                <p className="text-xs text-slate-400">Success Rate</p>
+                                                <p className="text-lg font-bold text-amber-400 mt-1">{worker.stats.successRate}%</p>
+                                            </div>
                                         </div>
-                                        <div className="bg-slate-800/50 rounded-lg p-3">
-                                            <p className="text-xs text-slate-400">Last 30d</p>
-                                            <p className="text-lg font-bold text-cyan-400 mt-1">{worker.stats.last30Days}</p>
-                                        </div>
-                                        <div className="bg-slate-800/50 rounded-lg p-3">
-                                            <p className="text-xs text-slate-400">Avg Days</p>
-                                            <p className="text-lg font-bold text-emerald-400 mt-1">{worker.stats.avgCompletionDays}d</p>
-                                        </div>
-                                        <div className="bg-slate-800/50 rounded-lg p-3">
-                                            <p className="text-xs text-slate-400">Score</p>
-                                            <p className="text-lg font-bold text-amber-400 mt-1">{worker.stats.performanceScore}%</p>
-                                        </div>
-                                    </div>
+
+                                        {/* Activity Chart */}
+                                        {worker.stats.dailyStats && worker.stats.dailyStats.length > 0 && (
+                                            <div className="bg-slate-800/30 rounded-lg p-3">
+                                                <p className="text-xs text-slate-400 mb-2 flex items-center gap-1">
+                                                    <Activity size={12} />
+                                                    Last 14 Days Activity
+                                                </p>
+                                                <MiniChart data={worker.stats.dailyStats} />
+                                            </div>
+                                        )}
+                                    </>
                                 )}
 
                                 {/* Permissions */}
@@ -539,6 +627,7 @@ export default function WorkersPage() {
                                     <tr>
                                         <th className="text-left py-4 px-6 text-xs font-medium text-slate-400 uppercase">Worker</th>
                                         <th className="text-center py-4 px-6 text-xs font-medium text-slate-400 uppercase">Performance</th>
+                                        <th className="text-center py-4 px-6 text-xs font-medium text-slate-400 uppercase">Activity</th>
                                         <th className="text-left py-4 px-6 text-xs font-medium text-slate-400 uppercase">Permissions</th>
                                         <th className="text-right py-4 px-6 text-xs font-medium text-slate-400 uppercase">Actions</th>
                                     </tr>
@@ -561,26 +650,33 @@ export default function WorkersPage() {
                                                 {worker.stats && (
                                                     <div className="flex items-center justify-center gap-4">
                                                         <div className="text-center">
-                                                            <p className="text-lg font-bold text-blue-400">{worker.stats.totalLive}</p>
-                                                            <p className="text-xs text-slate-500">Total</p>
+                                                            <p className="text-lg font-bold text-emerald-400">{worker.stats.liveCount}</p>
+                                                            <p className="text-xs text-slate-500">Live</p>
                                                         </div>
                                                         <div className="text-center">
-                                                            <p className="text-lg font-bold text-cyan-400">{worker.stats.last30Days}</p>
-                                                            <p className="text-xs text-slate-500">30d</p>
+                                                            <p className="text-lg font-bold text-cyan-400">{worker.stats.thisMonth}</p>
+                                                            <p className="text-xs text-slate-500">Month</p>
                                                         </div>
                                                         <div className="text-center">
-                                                            <p className="text-lg font-bold text-amber-400">{worker.stats.performanceScore}%</p>
-                                                            <p className="text-xs text-slate-500">Score</p>
+                                                            <p className="text-lg font-bold text-amber-400">{worker.stats.successRate}%</p>
+                                                            <p className="text-xs text-slate-500">Success</p>
                                                         </div>
                                                     </div>
                                                 )}
                                             </td>
                                             <td className="py-4 px-6">
+                                                {worker.stats?.dailyStats && (
+                                                    <div className="flex justify-center">
+                                                        <MiniChart data={worker.stats.dailyStats} />
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="py-4 px-6">
                                                 <div className="flex flex-wrap gap-1">
-                                                    {worker.canCreateReviews && <Badge className="bg-blue-500/20 text-blue-400 border-0">Create</Badge>}
-                                                    {worker.canEditReviews && <Badge className="bg-cyan-500/20 text-cyan-400 border-0">Edit</Badge>}
-                                                    {worker.canDeleteReviews && <Badge className="bg-red-500/20 text-red-400 border-0">Delete</Badge>}
-                                                    {worker.canManageProfiles && <Badge className="bg-purple-500/20 text-purple-400 border-0">Profiles</Badge>}
+                                                    {worker.canCreateReviews && <Badge className="bg-blue-500/20 text-blue-400 border-0 text-xs">Create</Badge>}
+                                                    {worker.canEditReviews && <Badge className="bg-cyan-500/20 text-cyan-400 border-0 text-xs">Edit</Badge>}
+                                                    {worker.canDeleteReviews && <Badge className="bg-red-500/20 text-red-400 border-0 text-xs">Delete</Badge>}
+                                                    {worker.canManageProfiles && <Badge className="bg-purple-500/20 text-purple-400 border-0 text-xs">Profiles</Badge>}
                                                 </div>
                                             </td>
                                             <td className="py-4 px-6 text-right">
@@ -591,6 +687,13 @@ export default function WorkersPage() {
                                                         </Button>
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800">
+                                                        <DropdownMenuItem
+                                                            onClick={() => setDetailsWorker(worker)}
+                                                            className="text-slate-300 hover:text-white cursor-pointer"
+                                                        >
+                                                            <Eye size={14} className="mr-2" />
+                                                            View Details
+                                                        </DropdownMenuItem>
                                                         <DropdownMenuItem
                                                             onClick={() => handleEditPermissions(worker)}
                                                             className="text-slate-300 hover:text-white cursor-pointer"
@@ -637,6 +740,188 @@ export default function WorkersPage() {
                     </Button>
                 </div>
             )}
+
+            {/* Worker Details Dialog */}
+            <Dialog open={!!detailsWorker} onOpenChange={() => setDetailsWorker(null)}>
+                <DialogContent className="bg-slate-900 border-slate-800 max-w-4xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold text-lg">
+                                {detailsWorker && (detailsWorker.name || detailsWorker.email).charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <DialogTitle className="text-white text-xl">{detailsWorker?.name || "No Name"}</DialogTitle>
+                                <p className="text-sm text-slate-400">{detailsWorker?.email}</p>
+                            </div>
+                        </div>
+                    </DialogHeader>
+
+                    {detailsWorker?.stats && (
+                        <Tabs defaultValue="overview" className="mt-4">
+                            <TabsList className="grid grid-cols-3 w-full bg-slate-800/50">
+                                <TabsTrigger value="overview">Overview</TabsTrigger>
+                                <TabsTrigger value="activity">Activity</TabsTrigger>
+                                <TabsTrigger value="projects">Projects</TabsTrigger>
+                            </TabsList>
+
+                            <TabsContent value="overview" className="space-y-4 mt-4">
+                                {/* Key Metrics */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    <Card className="bg-slate-800/50 border-slate-700">
+                                        <CardContent className="p-4">
+                                            <p className="text-xs text-slate-400 mb-1">Total Touched</p>
+                                            <p className="text-2xl font-bold text-white">{detailsWorker.stats.totalTouched}</p>
+                                        </CardContent>
+                                    </Card>
+                                    <Card className="bg-slate-800/50 border-slate-700">
+                                        <CardContent className="p-4">
+                                            <p className="text-xs text-slate-400 mb-1">Live Reviews</p>
+                                            <p className="text-2xl font-bold text-emerald-400">{detailsWorker.stats.liveCount}</p>
+                                        </CardContent>
+                                    </Card>
+                                    <Card className="bg-slate-800/50 border-slate-700">
+                                        <CardContent className="p-4">
+                                            <p className="text-xs text-slate-400 mb-1">Success Rate</p>
+                                            <p className="text-2xl font-bold text-amber-400">{detailsWorker.stats.successRate}%</p>
+                                        </CardContent>
+                                    </Card>
+                                    <Card className="bg-slate-800/50 border-slate-700">
+                                        <CardContent className="p-4">
+                                            <p className="text-xs text-slate-400 mb-1">This Month</p>
+                                            <p className="text-2xl font-bold text-cyan-400">{detailsWorker.stats.thisMonth}</p>
+                                        </CardContent>
+                                    </Card>
+                                </div>
+
+                                {/* Status Breakdown */}
+                                {detailsWorker.stats.statusBreakdown && detailsWorker.stats.statusBreakdown.length > 0 && (
+                                    <Card className="bg-slate-800/30 border-slate-700">
+                                        <CardHeader>
+                                            <CardTitle className="text-white text-sm flex items-center gap-2">
+                                                <PieChart size={16} />
+                                                Status Distribution
+                                            </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <StatusPieChart data={detailsWorker.stats.statusBreakdown} />
+                                        </CardContent>
+                                    </Card>
+                                )}
+
+                                {/* Work Summary */}
+                                <div className="grid grid-cols-3 gap-3">
+                                    <Card className="bg-blue-500/10 border-blue-500/20">
+                                        <CardContent className="p-4 text-center">
+                                            <p className="text-xs text-blue-300 mb-1">Created</p>
+                                            <p className="text-2xl font-bold text-blue-400">{detailsWorker.stats.created}</p>
+                                        </CardContent>
+                                    </Card>
+                                    <Card className="bg-cyan-500/10 border-cyan-500/20">
+                                        <CardContent className="p-4 text-center">
+                                            <p className="text-xs text-cyan-300 mb-1">Updated</p>
+                                            <p className="text-2xl font-bold text-cyan-400">{detailsWorker.stats.updated}</p>
+                                        </CardContent>
+                                    </Card>
+                                    <Card className="bg-purple-500/10 border-purple-500/20">
+                                        <CardContent className="p-4 text-center">
+                                            <p className="text-xs text-purple-300 mb-1">This Week</p>
+                                            <p className="text-2xl font-bold text-purple-400">{detailsWorker.stats.thisWeek}</p>
+                                        </CardContent>
+                                    </Card>
+                                </div>
+                            </TabsContent>
+
+                            <TabsContent value="activity" className="space-y-4 mt-4">
+                                <Card className="bg-slate-800/30 border-slate-700">
+                                    <CardHeader>
+                                        <CardTitle className="text-white text-sm flex items-center gap-2">
+                                            <BarChart3 size={16} />
+                                            Daily Activity (Last 30 Days)
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        {detailsWorker.stats.dailyStats && detailsWorker.stats.dailyStats.length > 0 ? (
+                                            <div className="space-y-2">
+                                                <div className="flex items-end gap-1 h-40 px-2">
+                                                    {detailsWorker.stats.dailyStats.map((day, idx) => {
+                                                        const maxVal = Math.max(...detailsWorker.stats!.dailyStats.map(d => d.total), 1);
+                                                        const height = (day.total / maxVal) * 100;
+                                                        return (
+                                                            <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                                                                <div
+                                                                    className="w-full bg-gradient-to-t from-blue-500 to-cyan-400 rounded-t transition-all hover:opacity-80 cursor-pointer"
+                                                                    style={{ height: `${height}%` }}
+                                                                    title={`${new Date(day.date).toLocaleDateString()}: ${day.total} reviews`}
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="flex justify-between text-xs text-slate-500 mt-2">
+                                                    <span>{new Date(detailsWorker.stats.dailyStats[0].date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                                                    <span>Today</span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-slate-500 text-sm">No activity data available</p>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </TabsContent>
+
+                            <TabsContent value="projects" className="space-y-4 mt-4">
+                                <Card className="bg-slate-800/30 border-slate-700">
+                                    <CardHeader>
+                                        <CardTitle className="text-white text-sm flex items-center gap-2">
+                                            <Briefcase size={16} />
+                                            Project-wise Statistics
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        {detailsWorker.stats.projectWiseStats && detailsWorker.stats.projectWiseStats.length > 0 ? (
+                                            <div className="space-y-3">
+                                                {detailsWorker.stats.projectWiseStats.map((project, idx) => (
+                                                    <div key={idx} className="bg-slate-800/50 rounded-lg p-4 hover:bg-slate-800/70 transition-colors">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <div>
+                                                                <h4 className="text-white font-medium flex items-center gap-2">
+                                                                    <TrendingUp size={14} className="text-blue-400" />
+                                                                    {project.clientName}
+                                                                </h4>
+                                                                <p className="text-xs text-slate-400">{project.profileCount} profile{project.profileCount !== 1 ? 's' : ''}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-2xl font-bold text-blue-400">{project.reviewCount}</p>
+                                                                <p className="text-xs text-slate-500">reviews</p>
+                                                            </div>
+                                                        </div>
+                                                        {project.profiles && project.profiles.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1 mt-2">
+                                                                {project.profiles.map((profile, pIdx) => (
+                                                                    <Badge key={pIdx} variant="secondary" className="bg-slate-700 text-slate-300 text-xs">
+                                                                        {profile}
+                                                                    </Badge>
+                                                                ))}
+                                                                {project.profileCount > project.profiles.length && (
+                                                                    <Badge variant="secondary" className="bg-slate-700 text-slate-400 text-xs">
+                                                                        +{project.profileCount - project.profiles.length} more
+                                                                    </Badge>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-slate-500 text-sm">No project data available</p>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </TabsContent>
+                        </Tabs>
+                    )}
+                </DialogContent>
+            </Dialog>
 
             {/* Create Worker Dialog */}
             <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

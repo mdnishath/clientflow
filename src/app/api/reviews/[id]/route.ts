@@ -65,58 +65,64 @@ export async function PATCH(
         : { id, profile: { clientId: scope.clientId! } };
 
     try {
-        // Verify ownership
-        const existing = await prisma.review.findFirst({
-            where: whereClause,
-            include: { profile: { select: { businessName: true } } },
-            // We need liveById for First LIVE Attribution logic
-        });
-
-        if (!existing) {
-            return NextResponse.json({ error: "Review not found" }, { status: 404 });
-        }
-
-        // liveById is already included in the default select (column exists in Review model)
-
         const body = await request.json();
         const { reviewText, reviewLiveLink, emailUsed, status, dueDate, notes, isArchived } = body;
 
-        // Track completion
-        let completedAt = existing.completedAt;
-        if (status === "DONE" || status === "LIVE") {
-            completedAt = completedAt || new Date();
-        }
+        // FIX: Use atomic transaction for consistent updates
+        const result = await prisma.$transaction(async (tx) => {
+            // Verify ownership within transaction
+            const existing = await tx.review.findFirst({
+                where: whereClause,
+                include: { profile: { select: { businessName: true } } },
+            });
 
-        // First LIVE Attribution: Only set liveById if not already set
-        let liveByData: { liveById?: string; liveAt?: Date } = {};
-        if (status === "LIVE" && !existing.liveById) {
-            liveByData = {
-                liveById: scope.actualUserId,
-                liveAt: new Date(),
-            };
-        }
+            if (!existing) {
+                throw new Error("Review not found");
+            }
 
-        const review = await prisma.review.update({
-            where: { id },
-            data: {
-                ...(reviewText !== undefined && { reviewText: reviewText?.trim() || null }),
-                ...(reviewLiveLink !== undefined && { reviewLiveLink: reviewLiveLink?.trim() || null }),
-                ...(emailUsed !== undefined && { emailUsed: emailUsed?.trim() || null }),
-                ...(status !== undefined && { status }),
-                ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
-                ...(notes !== undefined && { notes: notes?.trim() || null }),
-                ...(isArchived !== undefined && { isArchived }),
-                completedAt,
-                updatedById: scope.actualUserId, // Track who updated this review
-                ...liveByData, // First LIVE Attribution
-            },
-            include: {
-                profile: {
-                    select: { id: true, businessName: true, category: true },
+            // Track completion
+            let completedAt = existing.completedAt;
+            if (status === "DONE" || status === "LIVE") {
+                completedAt = completedAt || new Date();
+            }
+
+            // First LIVE Attribution: Only set liveById if not already set
+            let liveByData: { liveById?: string; liveAt?: Date } = {};
+            if (status === "LIVE" && !existing.liveById) {
+                liveByData = {
+                    liveById: scope.actualUserId,
+                    liveAt: new Date(),
+                };
+            }
+
+            const review = await tx.review.update({
+                where: { id },
+                data: {
+                    ...(reviewText !== undefined && { reviewText: reviewText?.trim() || null }),
+                    ...(reviewLiveLink !== undefined && { reviewLiveLink: reviewLiveLink?.trim() || null }),
+                    ...(emailUsed !== undefined && { emailUsed: emailUsed?.trim() || null }),
+                    ...(status !== undefined && { status }),
+                    ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
+                    ...(notes !== undefined && { notes: notes?.trim() || null }),
+                    ...(isArchived !== undefined && { isArchived }),
+                    completedAt,
+                    updatedById: scope.actualUserId,
+                    ...liveByData,
                 },
-            },
+                include: {
+                    profile: {
+                        select: { id: true, businessName: true, category: true },
+                    },
+                },
+            });
+
+            return { review, existing };
+        }, {
+            isolationLevel: 'ReadCommitted',
+            timeout: 10000,
         });
 
+        const { review, existing } = result;
         const businessName = existing.profile?.businessName || "Unknown";
 
         // Notification based on action
@@ -186,6 +192,14 @@ export async function PATCH(
         return NextResponse.json(review);
     } catch (error) {
         console.error("Error updating review:", error);
+
+        // Handle transaction-specific errors
+        if (error instanceof Error) {
+            if (error.message === "Review not found") {
+                return NextResponse.json({ error: "Review not found" }, { status: 404 });
+            }
+        }
+
         return NextResponse.json(
             { error: "Failed to update review" },
             { status: 500 }

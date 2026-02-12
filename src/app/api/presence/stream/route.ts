@@ -23,7 +23,8 @@ export const onlineUsers = new Map<string, {
 const OFFLINE_THRESHOLD = 30000; // 30 seconds
 const AWAY_THRESHOLD = 120000; // 2 minutes
 
-setInterval(() => {
+// FIX: Store interval ID for cleanup
+const cleanupIntervalId = setInterval(() => {
     const now = Date.now();
     let hasChanges = false;
 
@@ -48,6 +49,13 @@ setInterval(() => {
         broadcastPresenceUpdate();
     }
 }, 10000); // Check every 10 seconds
+
+// FIX: Cleanup function for graceful shutdown
+export function cleanupPresenceStream() {
+    clearInterval(cleanupIntervalId);
+    connections.clear();
+    onlineUsers.clear();
+}
 
 // Broadcast presence update to all connected admin clients (ISOLATED per admin)
 export function broadcastPresenceUpdate(event: 'user_online' | 'user_offline' | 'user_away' | 'update' = 'update', userId?: string) {
