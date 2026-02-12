@@ -1,0 +1,193 @@
+/**
+ * Mobile Responsive Utilities
+ * Additional mobile-first responsive classes
+ */
+
+/* Touch-friendly tap targets (minimum 44x44px) */
+.touch-target {
+  min-width: 44px;
+  min-height: 44px;
+  @apply flex items-center justify-center;
+}
+
+/* Mobile-optimized spacing */
+@media (max-width: 640px) {
+  .mobile-compact {
+    @apply p-3 gap-2;
+  }
+
+  .mobile-full {
+    @apply w-full;
+  }
+
+  .mobile-stack {
+    @apply flex-col;
+  }
+}
+
+/* Prevent horizontal scroll on mobile */
+.mobile-container {
+  @apply overflow-x-hidden max-w-full;
+}
+
+/* Mobile-friendly card spacing */
+@media (max-width: 640px) {
+  .mobile-card {
+    @apply rounded-lg p-4 mb-3;
+  }
+}
+
+/* Hide on mobile */
+.desktop-only {
+  @apply hidden lg:block;
+}
+
+/* Show only on mobile */
+.mobile-only {
+  @apply block lg:hidden;
+}
+
+/* Mobile navigation improvements */
+@media (max-width: 1024px) {
+  .mobile-nav {
+    @apply fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-50;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Safe area support for iOS */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .safe-left {
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .safe-right {
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Mobile typography */
+@media (max-width: 640px) {
+  .mobile-heading {
+    @apply text-2xl;
+  }
+
+  .mobile-subheading {
+    @apply text-lg;
+  }
+
+  .mobile-text {
+    @apply text-sm;
+  }
+}
+
+/* Touch-optimized scrolling */
+.mobile-scroll {
+  -webkit-overflow-scrolling: touch;
+  @apply overflow-y-auto;
+}
+
+/* Prevent zoom on input focus (iOS) */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+select,
+textarea {
+  font-size: 16px; /* Prevents zoom on iOS */
+}
+
+@media (min-width: 640px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  select,
+  textarea {
+    font-size: 14px; /* Normal size on desktop */
+  }
+}
+
+/* Mobile modal adjustments */
+@media (max-width: 640px) {
+  [role="dialog"],
+  [role="alertdialog"] {
+    @apply w-full h-full max-w-full max-h-full rounded-none;
+  }
+}
+
+/* Mobile table scrolling */
+.mobile-table-container {
+  @apply -mx-4 px-4 overflow-x-auto;
+}
+
+@media (max-width: 640px) {
+  .mobile-table-container {
+    @apply -mx-2 px-2;
+  }
+}
+
+/* Responsive grid utilities */
+.responsive-grid-1 {
+  @apply grid grid-cols-1;
+}
+
+.responsive-grid-2 {
+  @apply grid grid-cols-1 sm:grid-cols-2;
+}
+
+.responsive-grid-3 {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3;
+}
+
+.responsive-grid-4 {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4;
+}
+
+/* Mobile button groups */
+@media (max-width: 640px) {
+  .mobile-button-group {
+    @apply flex flex-col gap-2 w-full;
+  }
+
+  .mobile-button-group > button,
+  .mobile-button-group > a {
+    @apply w-full justify-center;
+  }
+}
+
+/* Sticky mobile header */
+.mobile-sticky-header {
+  @apply sticky top-0 z-40 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800;
+}
+
+/* Mobile-optimized spacing scale */
+@media (max-width: 640px) {
+  .section-mobile {
+    @apply py-4 px-4;
+  }
+
+  .section-desktop {
+    @apply py-6 px-6;
+  }
+}
+
+@media (min-width: 641px) {
+  .section-mobile {
+    @apply py-6 px-6;
+  }
+
+  .section-desktop {
+    @apply py-8 px-8;
+  }
+}
