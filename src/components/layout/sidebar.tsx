@@ -22,6 +22,7 @@ import {
     Upload,
     UserCog,
     ArrowRightLeft,
+    DollarSign,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ const navigation: NavItem[] = [
     { name: "Settings", href: "/settings", icon: User }, // Account settings (password)
     // Admin-only items
     { name: "Clients", href: "/clients", icon: Users, adminOnly: true },
+    { name: "Finance", href: "/admin/finance", icon: DollarSign, adminOnly: true },
     { name: "Accounts", href: "/admin/accounts", icon: UserCog, adminOnly: true },
     { name: "Workers", href: "/admin/workers", icon: Shield, adminOnly: true },
     { name: "Migration Tool", href: "/admin/migration", icon: ArrowRightLeft, adminOnly: true },
