@@ -96,10 +96,11 @@ export default function WorkersPage() {
             const res = await fetch(`/api/admin/workers?${params}`);
             if (res.ok) {
                 const data = await res.json();
+                const workersList = data.workers || [];
 
                 // Fetch stats for each worker
                 const workersWithStats = await Promise.all(
-                    data.map(async (worker: Worker) => {
+                    workersList.map(async (worker: Worker) => {
                         try {
                             const statsRes = await fetch(`/api/admin/workers/${worker.id}/stats`);
                             if (statsRes.ok) {
