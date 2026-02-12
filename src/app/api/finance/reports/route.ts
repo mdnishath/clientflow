@@ -170,20 +170,30 @@ export async function GET(request: NextRequest) {
         }
 
         if (reportType === "timeline" || reportType === "all") {
-            // Monthly breakdown
-            const monthlyData = await prisma.$queryRaw`
+            // Monthly breakdown - build query string dynamically
+            let query = `
                 SELECT
                     DATE_TRUNC('month', "createdAt") as month,
                     COUNT(*) as count,
                     SUM("totalAmount") as total
                 FROM "Invoice"
                 WHERE "status" = 'PAID'
-                ${dateFilter.gte ? prisma.$queryRawUnsafe(`AND "createdAt" >= '${startDate}'`) : prisma.$queryRawUnsafe('')}
-                ${dateFilter.lte ? prisma.$queryRawUnsafe(`AND "createdAt" <= '${endDate}'`) : prisma.$queryRawUnsafe('')}
+            `;
+
+            if (dateFilter.gte) {
+                query += ` AND "createdAt" >= '${startDate}'`;
+            }
+            if (dateFilter.lte) {
+                query += ` AND "createdAt" <= '${endDate}'`;
+            }
+
+            query += `
                 GROUP BY DATE_TRUNC('month', "createdAt")
                 ORDER BY month DESC
                 LIMIT 12
-            ` as any;
+            `;
+
+            const monthlyData = await prisma.$queryRawUnsafe(query) as any;
 
             report.timeline = monthlyData;
         }
