@@ -173,22 +173,22 @@ export async function GET(request: NextRequest) {
             // Monthly breakdown - build query string dynamically
             let query = `
                 SELECT
-                    DATE_TRUNC('month', "createdAt") as month,
+                    DATE_TRUNC('month', "created_at") as month,
                     COUNT(*) as count,
-                    SUM("totalAmount") as total
-                FROM "Invoice"
+                    SUM("total_amount") as total
+                FROM "invoices"
                 WHERE "status" = 'PAID'
             `;
 
             if (dateFilter.gte) {
-                query += ` AND "createdAt" >= '${startDate}'`;
+                query += ` AND "created_at" >= '${startDate}'`;
             }
             if (dateFilter.lte) {
-                query += ` AND "createdAt" <= '${endDate}'`;
+                query += ` AND "created_at" <= '${endDate}'`;
             }
 
             query += `
-                GROUP BY DATE_TRUNC('month', "createdAt")
+                GROUP BY DATE_TRUNC('month', "created_at")
                 ORDER BY month DESC
                 LIMIT 12
             `;
