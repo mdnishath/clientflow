@@ -111,7 +111,9 @@ export function useBatchCheck() {
             setIsProcessing(true);
             setProgress(state.progress);
             setStats(state.stats);
-            // Reconnect to SSE
+
+            // FIX: Reconnect to SSE without starting new batch check
+            // The backend is already processing, we just need to listen for updates
             reconnectToSSE();
           } catch (error) {
             console.error('Error validating state with backend:', error);
@@ -160,12 +162,13 @@ export function useBatchCheck() {
     localStorage.removeItem(getBatchStateKey());
   }, [getBatchStateKey]);
 
-  // Reconnect to SSE after refresh
+  // Reconnect to SSE after refresh (without triggering new batch check)
   const reconnectToSSE = useCallback(() => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
 
+    console.log('🔄 Reconnecting to SSE stream (resume monitoring)');
     const eventSource = new EventSource('/api/automation/sse');
     eventSourceRef.current = eventSource;
 
