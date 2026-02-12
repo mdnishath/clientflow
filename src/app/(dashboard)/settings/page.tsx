@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
-    Settings,
+    Settings as SettingsIcon,
     Lock,
     Loader2,
     CheckCircle2,
@@ -16,7 +17,13 @@ import {
     AlertTriangle,
     Shield,
     User,
-    FileCode
+    FileCode,
+    Sparkles,
+    Package,
+    HardDrive,
+    Zap,
+    Crown,
+    ShieldCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,35 +33,26 @@ import { AdvancedBackup } from "@/components/settings/advanced-backup";
 export default function SettingsPage() {
     const { isAdmin, user } = useAuth();
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState<"account" | "admin">("account");
+    const [activeSection, setActiveSection] = useState<"profile" | "security" | "backup" | "advanced">("profile");
 
-    // account state
-    const [name, setName] = useState("");
+    // Profile state
+    const [name, setName] = useState(user?.name || "");
     const [isUpdatingName, setIsUpdatingName] = useState(false);
+
+    // Security state
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-    // Initial name load
-    const [nameInitialized, setNameInitialized] = useState(false);
-
-    if (user?.name && !nameInitialized) {
-        setName(user.name);
-        setNameInitialized(true);
-    }
-
-    // admin state
+    // Backup state
     const [isRestoring, setIsRestoring] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    // settings backup state
     const [isRestoringSettings, setIsRestoringSettings] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const settingsFileInputRef = useRef<HTMLInputElement>(null);
 
     const handleNameUpdate = async (e: React.FormEvent) => {
         e.preventDefault();
-
         if (!name.trim()) {
             toast.error("Name cannot be empty");
             return;
@@ -68,12 +66,11 @@ export default function SettingsPage() {
                 body: JSON.stringify({ name }),
             });
 
-            const data = await res.json();
-
             if (res.ok) {
-                toast.success("Name updated successfully");
-                router.refresh(); // Refresh to update user session/UI
+                toast.success("Profile updated successfully!");
+                router.refresh();
             } else {
+                const data = await res.json();
                 toast.error(data.error || "Failed to update name");
             }
         } catch {
@@ -96,55 +93,42 @@ export default function SettingsPage() {
             return;
         }
 
-        setIsLoading(true);
+        setIsChangingPassword(true);
         try {
             const res = await fetch("/api/account", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    currentPassword,
-                    newPassword,
-                }),
+                body: JSON.stringify({ currentPassword, newPassword }),
             });
 
-            const data = await res.json();
-
             if (res.ok) {
-                toast.success("Password updated successfully");
+                toast.success("Password updated successfully!");
                 setCurrentPassword("");
                 setNewPassword("");
                 setConfirmPassword("");
             } else {
+                const data = await res.json();
                 toast.error(data.error || "Failed to update password");
             }
         } catch {
             toast.error("Failed to update password");
         } finally {
-            setIsLoading(false);
+            setIsChangingPassword(false);
         }
     };
 
-    const handleBackup = () => {
-        // Trigger download via direct navigation
-        window.location.href = "/api/admin/backup";
-        toast.success("Backup download started");
-    };
-
     const handleSettingsBackup = () => {
-        // Download settings-only backup
         window.location.href = "/api/admin/backup-settings";
-        toast.success("Settings backup download started");
+        toast.success("Downloading settings backup...");
     };
 
-    const handleSettingsRestoreClick = () => {
+    const handleSettingsRestore = () => {
         settingsFileInputRef.current?.click();
     };
 
     const handleSettingsFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
-        // Reset input
         e.target.value = "";
 
         const reader = new FileReader();
@@ -153,7 +137,6 @@ export default function SettingsPage() {
                 const jsonContent = event.target?.result as string;
                 const settingsData = JSON.parse(jsonContent);
 
-                // Validate it's a settings backup
                 if (settingsData.meta?.type !== "settings-only") {
                     toast.error("Invalid backup file - must be a settings-only backup");
                     return;
@@ -173,40 +156,36 @@ export default function SettingsPage() {
                         `Settings restored! ${data.stats.templatesCreated} templates, ${data.stats.contextsCreated} contexts, ${data.stats.categoriesCreated} categories`,
                         { duration: 5000 }
                     );
-                    if (data.stats.errors.length > 0) {
-                        console.warn("Restore warnings:", data.stats.errors);
-                    }
                     router.refresh();
                 } else {
                     toast.error(data.error || "Failed to restore settings");
                 }
             } catch (error: any) {
-                console.error("Settings restore error:", error);
                 toast.error(error.message || "Failed to parse backup file");
             } finally {
                 setIsRestoringSettings(false);
             }
         };
 
-        reader.onerror = () => {
-            toast.error("Failed to read backup file");
-        };
-
+        reader.onerror = () => toast.error("Failed to read backup file");
         reader.readAsText(file);
     };
 
-    const handleRestoreClick = () => {
+    const handleFullBackup = () => {
+        window.location.href = "/api/admin/backup";
+        toast.success("Downloading full database backup...");
+    };
+
+    const handleFullRestore = () => {
         fileInputRef.current?.click();
     };
 
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFullRestoreFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
-        // Reset input so same file can be selected again if needed
         e.target.value = "";
 
-        if (!confirm("WARNING: This will WIPE the current database and replace it with the backup. This cannot be undone. Are you sure?")) {
+        if (!confirm("⚠️ WARNING: This will WIPE ALL current data and replace it with the backup. This cannot be undone. Are you absolutely sure?")) {
             return;
         }
 
@@ -214,330 +193,476 @@ export default function SettingsPage() {
         reader.onload = async (event) => {
             try {
                 const jsonContent = event.target?.result as string;
-                const backupData = JSON.parse(jsonContent);
+                JSON.parse(jsonContent);
 
                 setIsRestoring(true);
                 const res = await fetch("/api/admin/restore", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ data: backupData.data || backupData }), // Handle robustly
+                    body: jsonContent,
                 });
-
-                const result = await res.json();
 
                 if (res.ok) {
                     toast.success("Database restored successfully!");
-                    setTimeout(() => window.location.reload(), 2000); // Reload to reflect changes
+                    router.refresh();
                 } else {
-                    toast.error(result.error || "Failed to restore database");
+                    const data = await res.json();
+                    toast.error(data.error || "Failed to restore database");
                 }
-            } catch (err) {
-                console.error(err);
-                toast.error("Invalid backup file");
+            } catch (error: any) {
+                toast.error(error.message || "Failed to parse backup file");
             } finally {
                 setIsRestoring(false);
             }
         };
+
+        reader.onerror = () => toast.error("Failed to read backup file");
         reader.readAsText(file);
     };
 
     return (
-        <div className="p-6 lg:p-8 pt-16 lg:pt-8">
+        <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-6 lg:p-8 pt-16 lg:pt-8">
+            {/* Header */}
             <div className="mb-8">
-                <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-                    <Settings className="text-indigo-400" />
-                    Settings
-                </h1>
-                <p className="text-slate-400 mt-1">
-                    Manage your account and application settings
-                </p>
+                <div className="flex items-center gap-3 mb-2">
+                    <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-500/50">
+                        <SettingsIcon className="text-white" size={28} />
+                    </div>
+                    <div>
+                        <h1 className="text-4xl font-bold text-white tracking-tight">Settings</h1>
+                        <p className="text-slate-400 mt-1">Manage your account, security, and system preferences</p>
+                    </div>
+                </div>
             </div>
 
-            {/* Custom Tabs */}
-            <div className="flex border-b border-slate-700 mb-8">
-                <button
-                    onClick={() => setActiveTab("account")}
-                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "account"
-                        ? "border-indigo-500 text-indigo-400"
-                        : "border-transparent text-slate-400 hover:text-white"
-                        }`}
-                >
-                    Account
-                </button>
-                {isAdmin && (
-                    <button
-                        onClick={() => setActiveTab("admin")}
-                        className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "admin"
-                            ? "border-indigo-500 text-indigo-400"
-                            : "border-transparent text-slate-400 hover:text-white"
-                            }`}
-                    >
-                        Admin & Database
-                    </button>
-                )}
-            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                {/* Sidebar Navigation */}
+                <div className="lg:col-span-1">
+                    <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm sticky top-24">
+                        <CardContent className="p-4">
+                            <nav className="space-y-2">
+                                <button
+                                    onClick={() => setActiveSection("profile")}
+                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                                        activeSection === "profile"
+                                            ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30"
+                                            : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                                    }`}
+                                >
+                                    <User size={20} />
+                                    <span className="font-medium">Profile</span>
+                                </button>
 
-            <div className="max-w-xl">
-                {activeTab === "account" && (
-                    <div className="space-y-6">
-                        {/* Profile Information Card */}
-                        <Card className="bg-slate-800/50 border-slate-700">
-                            <CardHeader>
-                                <CardTitle className="text-white flex items-center gap-2">
-                                    <User className="h-5 w-5 text-indigo-400" />
-                                    Profile Information
-                                </CardTitle>
-                                <CardDescription className="text-slate-400">
-                                    Update your name and profile details
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <form onSubmit={handleNameUpdate} className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="name" className="text-slate-300">
-                                            Name
-                                        </Label>
-                                        <div className="flex gap-2">
+                                <button
+                                    onClick={() => setActiveSection("security")}
+                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                                        activeSection === "security"
+                                            ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30"
+                                            : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                                    }`}
+                                >
+                                    <Lock size={20} />
+                                    <span className="font-medium">Security</span>
+                                </button>
+
+                                {isAdmin && (
+                                    <>
+                                        <button
+                                            onClick={() => setActiveSection("backup")}
+                                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                                                activeSection === "backup"
+                                                    ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30"
+                                                    : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                                            }`}
+                                        >
+                                            <Database size={20} />
+                                            <span className="font-medium">Backup & Restore</span>
+                                        </button>
+
+                                        <button
+                                            onClick={() => setActiveSection("advanced")}
+                                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                                                activeSection === "advanced"
+                                                    ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30"
+                                                    : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                                            }`}
+                                        >
+                                            <Zap size={20} />
+                                            <span className="font-medium">Advanced</span>
+                                            <Badge variant="secondary" className="ml-auto bg-amber-500/20 text-amber-400 border-amber-500/30">
+                                                Admin
+                                            </Badge>
+                                        </button>
+                                    </>
+                                )}
+                            </nav>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* Main Content */}
+                <div className="lg:col-span-3 space-y-6">
+                    {/* Profile Section */}
+                    {activeSection === "profile" && (
+                        <div className="space-y-6">
+                            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm overflow-hidden">
+                                <div className="h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="text-white flex items-center gap-2 text-2xl">
+                                                <User className="text-indigo-400" size={24} />
+                                                Profile Information
+                                            </CardTitle>
+                                            <CardDescription className="text-slate-400 mt-2">
+                                                Update your personal information and how you appear to others
+                                            </CardDescription>
+                                        </div>
+                                        <Sparkles className="text-purple-400" size={24} />
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                    <form onSubmit={handleNameUpdate} className="space-y-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="name" className="text-slate-300 font-medium">
+                                                Display Name
+                                            </Label>
+                                            <div className="flex gap-3">
+                                                <Input
+                                                    id="name"
+                                                    type="text"
+                                                    value={name}
+                                                    onChange={(e) => setName(e.target.value)}
+                                                    placeholder="Enter your name"
+                                                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-indigo-500 focus:ring-indigo-500/20"
+                                                    required
+                                                />
+                                                <Button
+                                                    type="submit"
+                                                    disabled={isUpdatingName || !name || name === user?.name}
+                                                    className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-500/30"
+                                                >
+                                                    {isUpdatingName ? (
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    ) : (
+                                                        <>
+                                                            <CheckCircle2 className="h-4 w-4 mr-2" />
+                                                            Save
+                                                        </>
+                                                    )}
+                                                </Button>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="email" className="text-slate-300 font-medium">
+                                                Email Address
+                                            </Label>
                                             <Input
-                                                id="name"
-                                                type="text"
-                                                value={name}
-                                                onChange={(e) => setName(e.target.value)}
-                                                placeholder="Enter your name"
-                                                className="bg-slate-900 border-slate-600 text-white"
+                                                id="email"
+                                                type="email"
+                                                value={user?.email || ""}
+                                                disabled
+                                                className="bg-slate-800/30 border-slate-700/50 text-slate-400 cursor-not-allowed"
+                                            />
+                                            <p className="text-xs text-slate-500">Email cannot be changed</p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label className="text-slate-300 font-medium">Role</Label>
+                                            <div className="flex items-center gap-2">
+                                                <Badge className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white border-0 px-4 py-1.5">
+                                                    {user?.role === "ADMIN" && <Crown className="w-3 h-3 mr-1" />}
+                                                    {user?.role === "ADMIN" ? "Administrator" : user?.role === "WORKER" ? "Worker" : "Client"}
+                                                </Badge>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {/* Security Section */}
+                    {activeSection === "security" && (
+                        <div className="space-y-6">
+                            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm overflow-hidden">
+                                <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500"></div>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="text-white flex items-center gap-2 text-2xl">
+                                                <ShieldCheck className="text-emerald-400" size={24} />
+                                                Change Password
+                                            </CardTitle>
+                                            <CardDescription className="text-slate-400 mt-2">
+                                                Keep your account secure with a strong password
+                                            </CardDescription>
+                                        </div>
+                                        <Lock className="text-emerald-400" size={24} />
+                                    </div>
+                                </CardHeader>
+                                <CardContent>
+                                    <form onSubmit={handlePasswordChange} className="space-y-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="currentPassword" className="text-slate-300 font-medium">
+                                                Current Password
+                                            </Label>
+                                            <Input
+                                                id="currentPassword"
+                                                type="password"
+                                                value={currentPassword}
+                                                onChange={(e) => setCurrentPassword(e.target.value)}
+                                                placeholder="Enter current password"
+                                                className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-emerald-500 focus:ring-emerald-500/20"
                                                 required
                                             />
-                                            <Button
-                                                type="submit"
-                                                disabled={isUpdatingName || !name || name === user?.name}
-                                                className="bg-indigo-600 hover:bg-indigo-700 shrink-0"
-                                            >
-                                                {isUpdatingName ? (
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                ) : (
-                                                    "Save"
-                                                )}
-                                            </Button>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="newPassword" className="text-slate-300 font-medium">
+                                                New Password
+                                            </Label>
+                                            <Input
+                                                id="newPassword"
+                                                type="password"
+                                                value={newPassword}
+                                                onChange={(e) => setNewPassword(e.target.value)}
+                                                placeholder="Enter new password (min 6 characters)"
+                                                className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-emerald-500 focus:ring-emerald-500/20"
+                                                required
+                                                minLength={6}
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="confirmPassword" className="text-slate-300 font-medium">
+                                                Confirm New Password
+                                            </Label>
+                                            <Input
+                                                id="confirmPassword"
+                                                type="password"
+                                                value={confirmPassword}
+                                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                                placeholder="Confirm new password"
+                                                className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-emerald-500 focus:ring-emerald-500/20"
+                                                required
+                                                minLength={6}
+                                            />
+                                        </div>
+
+                                        <Button
+                                            type="submit"
+                                            disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}
+                                            className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg shadow-emerald-500/30"
+                                        >
+                                            {isChangingPassword ? (
+                                                <>
+                                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                    Updating Password...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                                                    Update Password
+                                                </>
+                                            )}
+                                        </Button>
+                                    </form>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+
+                    {/* Backup & Restore Section */}
+                    {activeSection === "backup" && isAdmin && (
+                        <div className="space-y-6">
+                            {/* Settings Backup */}
+                            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm overflow-hidden">
+                                <div className="h-2 bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500"></div>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="text-white flex items-center gap-2 text-2xl">
+                                                <FileCode className="text-cyan-400" size={24} />
+                                                Configuration Backup
+                                            </CardTitle>
+                                            <CardDescription className="text-slate-400 mt-2">
+                                                Export/Import templates, contexts, and categories only
+                                            </CardDescription>
+                                        </div>
+                                        <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">
+                                            Cross-Deployment Safe
+                                        </Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4">
+                                        <div className="flex items-start gap-3">
+                                            <Package className="text-cyan-400 mt-0.5" size={20} />
+                                            <div className="flex-1">
+                                                <p className="text-sm text-cyan-300 font-medium">What's included:</p>
+                                                <ul className="text-xs text-slate-400 mt-2 space-y-1">
+                                                    <li>✓ Review Templates (prompts, instructions, examples)</li>
+                                                    <li>✓ Review Contexts (personas, scenarios, tones)</li>
+                                                    <li>✓ Categories (business types, icons, colors)</li>
+                                                    <li className="text-amber-400">✗ Business Data (profiles, reviews, clients) - NOT included</li>
+                                                </ul>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="email" className="text-slate-300">
-                                            Email (Read only)
-                                        </Label>
-                                        <Input
-                                            id="email"
-                                            type="email"
-                                            value={user?.email || ""}
-                                            disabled
-                                            className="bg-slate-900/50 border-slate-700 text-slate-400 cursor-not-allowed"
-                                        />
-                                    </div>
-                                </form>
-                            </CardContent>
-                        </Card>
 
-                        <Card className="bg-slate-800/50 border-slate-700">
-                            <CardHeader>
-                                <CardTitle className="text-white flex items-center gap-2">
-                                    <Lock className="h-5 w-5 text-indigo-400" />
-                                    Change Password
-                                </CardTitle>
-                                <CardDescription className="text-slate-400">
-                                    Update your password to keep your account secure
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <form onSubmit={handlePasswordChange} className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="currentPassword" className="text-slate-300">
-                                            Current Password
-                                        </Label>
-                                        <Input
-                                            id="currentPassword"
-                                            type="password"
-                                            value={currentPassword}
-                                            onChange={(e) => setCurrentPassword(e.target.value)}
-                                            placeholder="Enter current password"
-                                            className="bg-slate-900 border-slate-600 text-white"
-                                            required
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <Button
+                                            onClick={handleSettingsBackup}
+                                            className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 shadow-lg shadow-cyan-500/30"
+                                        >
+                                            <Download className="mr-2 h-4 w-4" />
+                                            Export Settings
+                                        </Button>
+
+                                        <input
+                                            type="file"
+                                            ref={settingsFileInputRef}
+                                            onChange={handleSettingsFileChange}
+                                            accept=".json"
+                                            className="hidden"
                                         />
+                                        <Button
+                                            onClick={handleSettingsRestore}
+                                            disabled={isRestoringSettings}
+                                            variant="outline"
+                                            className="border-cyan-600 text-cyan-400 hover:bg-cyan-600/10"
+                                        >
+                                            {isRestoringSettings ? (
+                                                <>
+                                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                    Importing...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Upload className="mr-2 h-4 w-4" />
+                                                    Import Settings
+                                                </>
+                                            )}
+                                        </Button>
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="newPassword" className="text-slate-300">
-                                            New Password
-                                        </Label>
-                                        <Input
-                                            id="newPassword"
-                                            type="password"
-                                            value={newPassword}
-                                            onChange={(e) => setNewPassword(e.target.value)}
-                                            placeholder="Enter new password (min 6 characters)"
-                                            className="bg-slate-900 border-slate-600 text-white"
-                                            required
-                                            minLength={6}
-                                        />
+                                </CardContent>
+                            </Card>
+
+                            {/* Full Database Backup */}
+                            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm overflow-hidden">
+                                <div className="h-2 bg-gradient-to-r from-orange-500 via-red-500 to-pink-500"></div>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="text-white flex items-center gap-2 text-2xl">
+                                                <HardDrive className="text-orange-400" size={24} />
+                                                Complete Database Backup
+                                            </CardTitle>
+                                            <CardDescription className="text-slate-400 mt-2">
+                                                Full system backup including all business data
+                                            </CardDescription>
+                                        </div>
+                                        <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">
+                                            Everything
+                                        </Badge>
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="confirmPassword" className="text-slate-300">
-                                            Confirm New Password
-                                        </Label>
-                                        <Input
-                                            id="confirmPassword"
-                                            type="password"
-                                            value={confirmPassword}
-                                            onChange={(e) => setConfirmPassword(e.target.value)}
-                                            placeholder="Confirm new password"
-                                            className="bg-slate-900 border-slate-600 text-white"
-                                            required
-                                            minLength={6}
-                                        />
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-4">
+                                        <div className="flex items-start gap-3">
+                                            <Database className="text-orange-400 mt-0.5" size={20} />
+                                            <div className="flex-1">
+                                                <p className="text-sm text-orange-300 font-medium">Complete backup includes:</p>
+                                                <ul className="text-xs text-slate-400 mt-2 space-y-1">
+                                                    <li>✓ All profiles, reviews, and clients</li>
+                                                    <li>✓ Templates, contexts, and categories</li>
+                                                    <li>✓ User accounts and permissions</li>
+                                                    <li>✓ System configurations</li>
+                                                </ul>
+                                            </div>
+                                        </div>
                                     </div>
+
                                     <Button
-                                        type="submit"
-                                        disabled={isLoading || !currentPassword || !newPassword || !confirmPassword}
-                                        className="w-full bg-indigo-600 hover:bg-indigo-700"
+                                        onClick={handleFullBackup}
+                                        className="w-full bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 shadow-lg shadow-orange-500/30"
                                     >
-                                        {isLoading ? (
+                                        <Download className="mr-2 h-4 w-4" />
+                                        Download Full Backup
+                                    </Button>
+                                </CardContent>
+                            </Card>
+
+                            {/* Dangerous Zone - Restore */}
+                            <Card className="bg-slate-900/50 border-red-900/50 backdrop-blur-sm overflow-hidden">
+                                <div className="h-2 bg-gradient-to-r from-red-600 to-rose-600"></div>
+                                <CardHeader>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <CardTitle className="text-white flex items-center gap-2 text-2xl">
+                                                <Shield className="text-red-400" size={24} />
+                                                Restore Database
+                                            </CardTitle>
+                                            <CardDescription className="text-slate-400 mt-2">
+                                                Replace current database with backup file
+                                            </CardDescription>
+                                        </div>
+                                        <AlertTriangle className="text-red-400" size={24} />
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                                        <div className="flex items-start gap-3">
+                                            <AlertTriangle className="text-red-400 mt-0.5 flex-shrink-0" size={20} />
+                                            <div className="flex-1">
+                                                <p className="text-sm text-red-300 font-medium">⚠️ DANGER ZONE</p>
+                                                <p className="text-xs text-slate-400 mt-1">
+                                                    This action will PERMANENTLY DELETE all current data and replace it with the backup.
+                                                    This cannot be undone. Make sure you have a recent backup before proceeding.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        onChange={handleFullRestoreFile}
+                                        accept=".json"
+                                        className="hidden"
+                                    />
+                                    <Button
+                                        onClick={handleFullRestore}
+                                        disabled={isRestoring}
+                                        variant="destructive"
+                                        className="w-full bg-red-600 hover:bg-red-700 shadow-lg shadow-red-500/30"
+                                    >
+                                        {isRestoring ? (
                                             <>
                                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                Updating...
+                                                Restoring Database...
                                             </>
                                         ) : (
                                             <>
-                                                <CheckCircle2 className="mr-2 h-4 w-4" />
-                                                Update Password
+                                                <Upload className="mr-2 h-4 w-4" />
+                                                Upload & Restore Database
                                             </>
                                         )}
                                     </Button>
-                                </form>
-                            </CardContent>
-                        </Card>
-                    </div>
-                )}
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
 
-                {activeTab === "admin" && isAdmin && (
-                    <div className="space-y-6">
-                        {/* Advanced Backup with Mapping */}
-                        <AdvancedBackup />
-
-                        {/* Settings-Only Backup (Cross-Deployment) */}
-                        <Card className="bg-slate-800/50 border-slate-700">
-                            <CardHeader>
-                                <CardTitle className="text-white flex items-center gap-2">
-                                    <FileCode className="h-5 w-5 text-cyan-400" />
-                                    Settings Backup (Cross-Deployment)
-                                </CardTitle>
-                                <CardDescription className="text-slate-400">
-                                    Export/Import only configuration (templates, contexts, categories).
-                                    <br />
-                                    <span className="text-cyan-400 text-xs mt-1 block">
-                                        ✓ Safe for cross-deployment • Won't affect business data (profiles, reviews, clients)
-                                    </span>
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-3">
-                                <Button
-                                    onClick={handleSettingsBackup}
-                                    className="w-full bg-cyan-600 hover:bg-cyan-700"
-                                >
-                                    <Download className="mr-2 h-4 w-4" />
-                                    Download Settings Backup
-                                </Button>
-
-                                <input
-                                    type="file"
-                                    ref={settingsFileInputRef}
-                                    onChange={handleSettingsFileChange}
-                                    accept=".json"
-                                    className="hidden"
-                                />
-                                <Button
-                                    onClick={handleSettingsRestoreClick}
-                                    disabled={isRestoringSettings}
-                                    variant="outline"
-                                    className="w-full border-cyan-600 text-cyan-400 hover:bg-cyan-600/10"
-                                >
-                                    {isRestoringSettings ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Restoring Settings...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Upload className="mr-2 h-4 w-4" />
-                                            Upload & Import Settings
-                                        </>
-                                    )}
-                                </Button>
-                            </CardContent>
-                        </Card>
-
-                        <Card className="bg-slate-800/50 border-slate-700">
-                            <CardHeader>
-                                <CardTitle className="text-white flex items-center gap-2">
-                                    <Database className="h-5 w-5 text-indigo-400" />
-                                    Quick Backup (All Data)
-                                </CardTitle>
-                                <CardDescription className="text-slate-400">
-                                    Download a JSON backup of the entire database (legacy method)
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <Button
-                                    onClick={handleBackup}
-                                    className="w-full bg-slate-700 hover:bg-slate-600"
-                                >
-                                    <Download className="mr-2 h-4 w-4" />
-                                    Download Full Backup
-                                </Button>
-                            </CardContent>
-                        </Card>
-
-                        <Card className="bg-slate-800/50 border-slate-700">
-                            <CardHeader>
-                                <CardTitle className="text-white flex items-center gap-2">
-                                    <Shield className="h-5 w-5 text-red-400" />
-                                    Restore Database
-                                </CardTitle>
-                                <CardDescription className="text-slate-400">
-                                    Restore database from a previous backup file.
-                                    <br />
-                                    <span className="text-amber-500 flex items-center gap-1 mt-1 text-xs">
-                                        <AlertTriangle size={12} />
-                                        WARNING: This will wipe all current data!
-                                    </span>
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    onChange={handleFileChange}
-                                    accept=".json"
-                                    className="hidden"
-                                />
-                                <Button
-                                    onClick={handleRestoreClick}
-                                    disabled={isRestoring}
-                                    variant="destructive"
-                                    className="w-full"
-                                >
-                                    {isRestoring ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Restoring Data...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Upload className="mr-2 h-4 w-4" />
-                                            Upload & Restore
-                                        </>
-                                    )}
-                                </Button>
-                            </CardContent>
-                        </Card>
-                    </div>
-                )}
+                    {/* Advanced Section */}
+                    {activeSection === "advanced" && isAdmin && (
+                        <div className="space-y-6">
+                            <AdvancedBackup />
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
