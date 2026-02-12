@@ -16,20 +16,20 @@ datasource db {
 
 // User roles for Role-Based Access Control (RBAC)
 enum Role {
-  ADMIN   // Full system access - can manage users, reviews, and all settings
-  WORKER  // Limited admin - works under an admin, restricted permissions
-  CLIENT  // Limited access - can manage own reviews and data only
+  ADMIN // Full system access - can manage users, reviews, and all settings
+  WORKER // Limited admin - works under an admin, restricted permissions
+  CLIENT // Limited access - can manage own reviews and data only
 }
 
 // Review statuses for GMB review tracking
 enum ReviewStatus {
-  PENDING       // নতুন, কাজ শুরু হয়নি
-  IN_PROGRESS   // কাজ চলছে
-  MISSING       // Review আসেনি
-  APPLIED       // Apply করা হয়েছে
-  GOOGLE_ISSUE  // Google platform সমস্যা
-  LIVE          // Review live হয়ে গেছে
-  DONE          // সম্পন্ন
+  PENDING // নতুন, কাজ শুরু হয়নি
+  IN_PROGRESS // কাজ চলছে
+  MISSING // Review আসেনি
+  APPLIED // Apply করা হয়েছে
+  GOOGLE_ISSUE // Google platform সমস্যা
+  LIVE // Review live হয়ে গেছে
+  DONE // সম্পন্ন
 }
 
 // ============================================
@@ -37,45 +37,49 @@ enum ReviewStatus {
 // ============================================
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
+  id           String  @id @default(cuid())
+  email        String  @unique
+  passwordHash String  @map("password_hash")
   name         String?
-  role         Role     @default(CLIENT)
-  
+  role         Role    @default(CLIENT)
+
   // For CLIENT role: link to their client entity (data isolation)
-  clientId     String?  @unique @map("client_id")
-  
+  clientId String? @unique @map("client_id")
+
   // Admin-controlled permissions for CLIENT users
-  canDelete    Boolean  @default(false) @map("can_delete") // Can this client delete data?
-  
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  canDelete Boolean @default(false) @map("can_delete") // Can this client delete data?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  ownedClients     Client[]  @relation("AdminClients") // Clients created by admin
-  linkedClient     Client?   @relation("ClientAccount", fields: [clientId], references: [id])
-  tags             Tag[]
-  reviews          Review[]  @relation("UserReviews")
-  reviewsCreated   Review[]  @relation("ReviewsCreatedBy")
-  reviewsUpdated   Review[]  @relation("ReviewsUpdatedBy")
-  reviewsLive      Review[]  @relation("ReviewsLiveBy")
-  reviewTemplates  ReviewTemplate[]
-  reviewContexts   ReviewContext[]
-  notifications    Notification[]
-  categories       Category[]
-  profilesCreated  GmbProfile[] @relation("ProfilesCreatedBy")
+  ownedClients    Client[]         @relation("AdminClients") // Clients created by admin
+  linkedClient    Client?          @relation("ClientAccount", fields: [clientId], references: [id])
+  tags            Tag[]
+  reviews         Review[]         @relation("UserReviews")
+  reviewsCreated  Review[]         @relation("ReviewsCreatedBy")
+  reviewsUpdated  Review[]         @relation("ReviewsUpdatedBy")
+  reviewsLive     Review[]         @relation("ReviewsLiveBy")
+  reviewTemplates ReviewTemplate[]
+  reviewContexts  ReviewContext[]
+  notifications   Notification[]
+  categories      Category[]
+  profilesCreated GmbProfile[]     @relation("ProfilesCreatedBy")
 
   // Worker hierarchy: Workers work under an Admin
-  parentAdminId    String?   @map("parent_admin_id")
-  parentAdmin      User?     @relation("AdminWorkers", fields: [parentAdminId], references: [id])
-  workers          User[]    @relation("AdminWorkers")
+  parentAdminId String? @map("parent_admin_id")
+  parentAdmin   User?   @relation("AdminWorkers", fields: [parentAdminId], references: [id])
+  workers       User[]  @relation("AdminWorkers")
+
+  // Finance relations
+  workerSalaries WorkerSalary[] @relation("WorkerSalaries")
+  payments       Payment[]      @relation("WorkerPayments")
 
   // Worker permissions (only applies to WORKER role)
-  canCreateReviews  Boolean  @default(true) @map("can_create_reviews")
-  canEditReviews    Boolean  @default(true) @map("can_edit_reviews")
-  canDeleteReviews  Boolean  @default(false) @map("can_delete_reviews")
-  canManageProfiles Boolean  @default(false) @map("can_manage_profiles")
+  canCreateReviews  Boolean @default(true) @map("can_create_reviews")
+  canEditReviews    Boolean @default(true) @map("can_edit_reviews")
+  canDeleteReviews  Boolean @default(false) @map("can_delete_reviews")
+  canManageProfiles Boolean @default(false) @map("can_manage_profiles")
 
   @@index([clientId])
   @@index([parentAdminId])
@@ -84,15 +88,15 @@ model User {
 
 // Client = The Person or Agency (e.g., Alex, Leo) - Your customer
 model Client {
-  id           String   @id @default(cuid())
-  userId       String   @map("user_id") // Admin who created/manages this client
-  name         String   // Client Name (e.g. Alex)
-  email        String?
-  phone        String?
-  notes        String?
-  isArchived   Boolean  @default(false) @map("is_archived")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id") // Admin who created/manages this client
+  name       String // Client Name (e.g. Alex)
+  email      String?
+  phone      String?
+  notes      String?
+  isArchived Boolean  @default(false) @map("is_archived")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   // Permissions
   canCreateProfiles Boolean @default(false) @map("can_create_profiles")
@@ -103,9 +107,14 @@ model Client {
   canDeleteReviews  Boolean @default(false) @map("can_delete_reviews")
 
   // Relations
-  adminUser    User         @relation("AdminClients", fields: [userId], references: [id], onDelete: Cascade)
-  userAccount  User?        @relation("ClientAccount") // Client's own login account (optional)
-  gmbProfiles  GmbProfile[]
+  adminUser   User         @relation("AdminClients", fields: [userId], references: [id], onDelete: Cascade)
+  userAccount User?        @relation("ClientAccount") // Client's own login account (optional)
+  gmbProfiles GmbProfile[]
+
+  // Finance relations
+  billings ClientBilling[] @relation("ClientBillings")
+  invoices Invoice[]       @relation("ClientInvoices")
+  payments Payment[]       @relation("ClientPayments")
 
   @@index([userId])
   @@index([isArchived])
@@ -118,20 +127,20 @@ model GmbProfile {
   clientId     String   @map("client_id")
   businessName String   @map("business_name")
   gmbLink      String?  @map("gmb_link")
-  category     String?  // GMB category for AI context
+  category     String? // GMB category for AI context
   isArchived   Boolean  @default(false) @map("is_archived")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   // Scheduling Fields
-  reviewLimit      Int?     @map("review_limit")       // Max live reviews per day
+  reviewLimit      Int?      @map("review_limit") // Max live reviews per day
   reviewsStartDate DateTime? @map("reviews_start_date") // Start date for counting
 
   // Order Tracking
-  reviewOrdered    Int      @default(0) @map("review_ordered") // Ordered review count
+  reviewOrdered Int @default(0) @map("review_ordered") // Ordered review count
 
   // Attribution
-  createdById      String?  @map("created_by_id")
+  createdById String? @map("created_by_id")
 
   // Relations
   client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -162,17 +171,17 @@ model Review {
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
   // Attribution tracking
-  createdById    String?      @map("created_by_id")
-  updatedById    String?      @map("updated_by_id")
+  createdById String? @map("created_by_id")
+  updatedById String? @map("updated_by_id")
 
   // First LIVE Attribution (Permanent - for salary calculation)
-  liveById       String?      @map("live_by_id")
-  liveAt         DateTime?    @map("live_at")
+  liveById String?   @map("live_by_id")
+  liveAt   DateTime? @map("live_at")
 
   // Live Check Automation Fields
-  lastCheckedAt  DateTime?    @map("last_checked_at")
-  checkStatus    String?      @map("check_status") // "LIVE", "MISSING", "ERROR", "CHECKING"
-  screenshotPath String?      @map("screenshot_path")
+  lastCheckedAt  DateTime? @map("last_checked_at")
+  checkStatus    String?   @map("check_status") // "LIVE", "MISSING", "ERROR", "CHECKING"
+  screenshotPath String?   @map("screenshot_path")
 
   // Relations
   user       User        @relation("UserReviews", fields: [userId], references: [id], onDelete: Cascade)
@@ -230,35 +239,35 @@ model ReviewTag {
 
 // ReviewTemplate = Reusable prompt templates for AI review generation
 model ReviewTemplate {
-  id                String   @id @default(cuid())
-  userId            String   @map("user_id")
+  id     String @id @default(cuid())
+  userId String @map("user_id")
 
   // Basic Info
-  name              String   // "Quick Praise", "Story Style"
-  lines             Int      @default(2) // 1, 2, or 3
+  name  String // "Quick Praise", "Story Style"
+  lines Int    @default(2) // 1, 2, or 3
 
   // Prompt Engineering
-  promptInstruction String   @db.Text @map("prompt_instruction")
-  exampleOutput     String?  @db.Text @map("example_output")
+  promptInstruction String  @map("prompt_instruction") @db.Text
+  exampleOutput     String? @map("example_output") @db.Text
 
   // Business Name Handling
-  namePosition      String   @default("none") @map("name_position") // none, start, middle, end
+  namePosition String @default("none") @map("name_position") // none, start, middle, end
 
   // Categorization
-  category          String?  // "short", "detailed", "casual", "professional"
-  tags              String[] @default([])
+  category String? // "short", "detailed", "casual", "professional"
+  tags     String[] @default([])
 
   // Quality Control
-  usageCount        Int      @default(0) @map("usage_count")
-  successRate       Float?   @map("success_rate") // Track which templates work best
-  isActive          Boolean  @default(true) @map("is_active")
+  usageCount  Int     @default(0) @map("usage_count")
+  successRate Float?  @map("success_rate") // Track which templates work best
+  isActive    Boolean @default(true) @map("is_active")
 
   // Metadata
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([isActive])
@@ -268,31 +277,31 @@ model ReviewTemplate {
 
 // ReviewContext = Personas and Scenarios for AI context
 model ReviewContext {
-  id          String   @id @default(cuid())
-  userId      String   @map("user_id")
+  id     String @id @default(cuid())
+  userId String @map("user_id")
 
   // Type
-  type        String   // "persona" or "scenario"
+  type String // "persona" or "scenario"
 
   // Content
-  title       String   // "Busy Mom", "First Time Visitor"
-  content     String   @db.Text // The actual context text
-  tone        String?  // "friendly", "professional", "casual"
+  title   String // "Busy Mom", "First Time Visitor"
+  content String  @db.Text // The actual context text
+  tone    String? // "friendly", "professional", "casual"
 
   // Categorization
-  category    String?  // "RESTAURANT", "SERVICE", "RETAIL", "GENERAL"
-  tags        String[] @default([])
+  category String? // "RESTAURANT", "SERVICE", "RETAIL", "GENERAL"
+  tags     String[] @default([])
 
   // Control
-  isActive    Boolean  @default(true) @map("is_active")
-  usageCount  Int      @default(0) @map("usage_count")
+  isActive   Boolean @default(true) @map("is_active")
+  usageCount Int     @default(0) @map("usage_count")
 
   // Metadata
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([type])
@@ -303,25 +312,25 @@ model ReviewContext {
 
 // Notification - Database-backed notification system
 model Notification {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
+  id     String @id @default(cuid())
+  userId String @map("user_id")
 
   // Content
-  title     String
-  message   String
-  type      String   @default("info") // "info", "success", "warning", "error"
+  title   String
+  message String
+  type    String @default("info") // "info", "success", "warning", "error"
 
   // Status
-  isRead    Boolean  @default(false) @map("is_read")
+  isRead Boolean @default(false) @map("is_read")
 
   // Link (optional - clicking notification can navigate somewhere)
-  link      String?
+  link String?
 
   // Metadata
   createdAt DateTime @default(now()) @map("created_at")
 
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([isRead])
@@ -335,34 +344,198 @@ model Notification {
 
 // Category = Dynamic business categories for templates/contexts
 model Category {
-  id          String   @id @default(cuid())
-  userId      String   @map("user_id")
+  id     String @id @default(cuid())
+  userId String @map("user_id")
 
   // Basic Info
-  name        String   // Display name (e.g., "Roofing Contractor")
-  slug        String   // URL-safe identifier (e.g., "ROOFING_CONTRACTOR")
-  description String?  @db.Text
+  name        String // Display name (e.g., "Roofing Contractor")
+  slug        String // URL-safe identifier (e.g., "ROOFING_CONTRACTOR")
+  description String? @db.Text
 
   // UI Customization
-  icon        String?  // Emoji or icon name
-  color       String?  // Hex color for UI
+  icon  String? // Emoji or icon name
+  color String? // Hex color for UI
 
   // Control
-  isSystem    Boolean  @default(false) @map("is_system") // System categories can't be deleted
-  isActive    Boolean  @default(true) @map("is_active")
-  isArchived  Boolean  @default(false) @map("is_archived")
-  sortOrder   Int      @default(0) @map("sort_order")
+  isSystem   Boolean @default(false) @map("is_system") // System categories can't be deleted
+  isActive   Boolean @default(true) @map("is_active")
+  isArchived Boolean @default(false) @map("is_archived")
+  sortOrder  Int     @default(0) @map("sort_order")
 
   // Metadata
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, slug])
   @@index([userId])
   @@index([isActive])
   @@index([isArchived])
   @@map("categories")
+}
+
+// ============================================
+// FINANCE SYSTEM
+// ============================================
+
+// WorkerSalary - Track worker compensation
+model WorkerSalary {
+  id       String @id @default(cuid())
+  workerId String @map("worker_id")
+  worker   User   @relation("WorkerSalaries", fields: [workerId], references: [id], onDelete: Cascade)
+
+  // Salary Info
+  amount     Float // Monthly/hourly rate or per-review rate
+  salaryType String // MONTHLY, HOURLY, PER_REVIEW
+  currency   String @default("USD")
+
+  // Period
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+
+  // Payment tracking
+  isPaid        Boolean   @default(false) @map("is_paid")
+  paidAt        DateTime? @map("paid_at")
+  paidBy        String?   @map("paid_by") // Admin ID who paid
+  paymentMethod String?   @map("payment_method") // BANK, CASH, PAYPAL, etc
+  notes         String?   @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([workerId])
+  @@index([effectiveFrom])
+  @@index([isPaid])
+  @@map("worker_salaries")
+}
+
+// ClientBilling - Track client billing and invoices
+model ClientBilling {
+  id       String @id @default(cuid())
+  clientId String @map("client_id")
+  client   Client @relation("ClientBillings", fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Billing Info
+  amount      Float
+  description String
+  billingType String @map("billing_type") // MONTHLY, PER_REVIEW, ONE_TIME, CUSTOM
+  currency    String @default("USD")
+
+  // Period
+  billingDate DateTime @map("billing_date")
+  dueDate     DateTime @map("due_date")
+
+  // Payment tracking
+  isPaid        Boolean   @default(false) @map("is_paid")
+  paidAt        DateTime? @map("paid_at")
+  paidAmount    Float?    @map("paid_amount")
+  paymentMethod String?   @map("payment_method")
+  transactionId String?   @map("transaction_id")
+
+  // Status
+  status String @default("PENDING") // PENDING, SENT, PAID, OVERDUE, CANCELLED
+
+  // Invoice
+  invoiceId String?  @map("invoice_id")
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+
+  notes     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String   @map("created_by") // Admin who created
+
+  @@index([clientId])
+  @@index([billingDate])
+  @@index([status])
+  @@index([isPaid])
+  @@map("client_billings")
+}
+
+// Invoice - Professional invoices for clients
+model Invoice {
+  id            String @id @default(cuid())
+  invoiceNumber String @unique @map("invoice_number") // INV-2024-0001
+
+  // Client info
+  clientId String @map("client_id")
+  client   Client @relation("ClientInvoices", fields: [clientId], references: [id])
+
+  // Invoice details
+  issueDate   DateTime @default(now()) @map("issue_date")
+  dueDate     DateTime @map("due_date")
+  amount      Float
+  tax         Float?   @default(0)
+  discount    Float?   @default(0)
+  totalAmount Float    @map("total_amount") // amount + tax - discount
+  currency    String   @default("USD")
+
+  // Items (JSON array of line items)
+  items Json
+
+  // Status
+  status     String    @default("DRAFT") // DRAFT, SENT, PAID, OVERDUE, CANCELLED
+  isPaid     Boolean   @default(false) @map("is_paid")
+  paidAt     DateTime? @map("paid_at")
+  paidAmount Float?    @map("paid_amount")
+
+  // Relations
+  billings ClientBilling[]
+  payments Payment[]
+
+  // Notes & attachments
+  notes         String? @db.Text
+  attachmentUrl String? @map("attachment_url")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String   @map("created_by") // Admin who created
+
+  @@index([clientId])
+  @@index([invoiceNumber])
+  @@index([status])
+  @@index([isPaid])
+  @@map("invoices")
+}
+
+// Payment - Track all payments (invoices, salaries, etc)
+model Payment {
+  id String @id @default(cuid())
+
+  // Payment type
+  paymentType String @map("payment_type") // INVOICE, WORKER_SALARY, EXPENSE, OTHER
+
+  // Related entities
+  invoiceId String?  @map("invoice_id")
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
+  clientId  String?  @map("client_id")
+  client    Client?  @relation("ClientPayments", fields: [clientId], references: [id])
+  workerId  String?  @map("worker_id")
+  worker    User?    @relation("WorkerPayments", fields: [workerId], references: [id])
+
+  // Payment details
+  amount        Float
+  currency      String   @default("USD")
+  paymentMethod String   @map("payment_method") // BANK, CASH, PAYPAL, STRIPE, WIRE, CHECK
+  transactionId String?  @map("transaction_id")
+  paymentDate   DateTime @default(now()) @map("payment_date")
+
+  // Status
+  status String @default("COMPLETED") // PENDING, COMPLETED, FAILED, REFUNDED
+
+  // Notes
+  notes      String? @db.Text
+  receiptUrl String? @map("receipt_url")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String   @map("created_by") // Admin who recorded
+
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([workerId])
+  @@index([paymentDate])
+  @@index([paymentType])
+  @@map("payments")
 }
