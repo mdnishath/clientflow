@@ -15,7 +15,8 @@ import {
     Upload,
     AlertTriangle,
     Shield,
-    User
+    User,
+    FileCode
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -46,6 +47,10 @@ export default function SettingsPage() {
     // admin state
     const [isRestoring, setIsRestoring] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // settings backup state
+    const [isRestoringSettings, setIsRestoringSettings] = useState(false);
+    const settingsFileInputRef = useRef<HTMLInputElement>(null);
 
     const handleNameUpdate = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -123,6 +128,71 @@ export default function SettingsPage() {
         // Trigger download via direct navigation
         window.location.href = "/api/admin/backup";
         toast.success("Backup download started");
+    };
+
+    const handleSettingsBackup = () => {
+        // Download settings-only backup
+        window.location.href = "/api/admin/backup-settings";
+        toast.success("Settings backup download started");
+    };
+
+    const handleSettingsRestoreClick = () => {
+        settingsFileInputRef.current?.click();
+    };
+
+    const handleSettingsFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Reset input
+        e.target.value = "";
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const jsonContent = event.target?.result as string;
+                const settingsData = JSON.parse(jsonContent);
+
+                // Validate it's a settings backup
+                if (settingsData.meta?.type !== "settings-only") {
+                    toast.error("Invalid backup file - must be a settings-only backup");
+                    return;
+                }
+
+                setIsRestoringSettings(true);
+                const res = await fetch("/api/admin/restore-settings", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: jsonContent,
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    toast.success(
+                        `Settings restored! ${data.stats.templatesCreated} templates, ${data.stats.contextsCreated} contexts, ${data.stats.categoriesCreated} categories`,
+                        { duration: 5000 }
+                    );
+                    if (data.stats.errors.length > 0) {
+                        console.warn("Restore warnings:", data.stats.errors);
+                    }
+                    router.refresh();
+                } else {
+                    toast.error(data.error || "Failed to restore settings");
+                }
+            } catch (error: any) {
+                console.error("Settings restore error:", error);
+                toast.error(error.message || "Failed to parse backup file");
+            } finally {
+                setIsRestoringSettings(false);
+            }
+        };
+
+        reader.onerror = () => {
+            toast.error("Failed to read backup file");
+        };
+
+        reader.readAsText(file);
     };
 
     const handleRestoreClick = () => {
@@ -349,6 +419,58 @@ export default function SettingsPage() {
                     <div className="space-y-6">
                         {/* Advanced Backup with Mapping */}
                         <AdvancedBackup />
+
+                        {/* Settings-Only Backup (Cross-Deployment) */}
+                        <Card className="bg-slate-800/50 border-slate-700">
+                            <CardHeader>
+                                <CardTitle className="text-white flex items-center gap-2">
+                                    <FileCode className="h-5 w-5 text-cyan-400" />
+                                    Settings Backup (Cross-Deployment)
+                                </CardTitle>
+                                <CardDescription className="text-slate-400">
+                                    Export/Import only configuration (templates, contexts, categories).
+                                    <br />
+                                    <span className="text-cyan-400 text-xs mt-1 block">
+                                        ✓ Safe for cross-deployment • Won't affect business data (profiles, reviews, clients)
+                                    </span>
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                <Button
+                                    onClick={handleSettingsBackup}
+                                    className="w-full bg-cyan-600 hover:bg-cyan-700"
+                                >
+                                    <Download className="mr-2 h-4 w-4" />
+                                    Download Settings Backup
+                                </Button>
+
+                                <input
+                                    type="file"
+                                    ref={settingsFileInputRef}
+                                    onChange={handleSettingsFileChange}
+                                    accept=".json"
+                                    className="hidden"
+                                />
+                                <Button
+                                    onClick={handleSettingsRestoreClick}
+                                    disabled={isRestoringSettings}
+                                    variant="outline"
+                                    className="w-full border-cyan-600 text-cyan-400 hover:bg-cyan-600/10"
+                                >
+                                    {isRestoringSettings ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Restoring Settings...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Upload className="mr-2 h-4 w-4" />
+                                            Upload & Import Settings
+                                        </>
+                                    )}
+                                </Button>
+                            </CardContent>
+                        </Card>
 
                         <Card className="bg-slate-800/50 border-slate-700">
                             <CardHeader>
