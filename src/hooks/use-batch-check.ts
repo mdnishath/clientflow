@@ -57,6 +57,12 @@ export function useBatchCheck() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const isPausedRef = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const isProcessingRef = useRef(isProcessing);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
 
   // Get user-specific localStorage key
   const getBatchStateKey = useCallback(() => {
@@ -210,9 +216,19 @@ export function useBatchCheck() {
       }
     });
 
-    eventSource.onerror = () => {
-      console.error('SSE connection error');
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error, will retry...', error);
       eventSource.close();
+
+      // Auto-reconnect after 3 seconds if still processing
+      if (isProcessingRef.current) {
+        console.log('🔄 SSE disconnected, reconnecting in 3s...');
+        setTimeout(() => {
+          if (isProcessingRef.current) {
+            reconnectToSSE();
+          }
+        }, 3000);
+      }
     };
   }, [progress.totalReviews, clearBatchState]);
 

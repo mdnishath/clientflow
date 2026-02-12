@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,8 @@ import {
     CreditCard,
     BarChart3,
     Download,
+    Wallet,
+    Receipt,
 } from "lucide-react";
 
 interface FinancialReport {
@@ -123,10 +126,18 @@ export default function FinancePage() {
                     <BarChart3 className="w-8 h-8 text-cyan-400" />
                     <h1 className="text-3xl font-bold text-white">Finance Dashboard</h1>
                 </div>
-                <Button variant="outline" className="border-slate-700 text-slate-300">
-                    <Download className="w-4 h-4 mr-2" />
-                    Export Report
-                </Button>
+                <div className="flex gap-2">
+                    <Link href="/admin/finance/salaries">
+                        <Button variant="outline" className="border-slate-700 text-slate-300">
+                            <Wallet className="w-4 h-4 mr-2" />
+                            Manage Salaries
+                        </Button>
+                    </Link>
+                    <Button variant="outline" className="border-slate-700 text-slate-300">
+                        <Download className="w-4 h-4 mr-2" />
+                        Export Report
+                    </Button>
+                </div>
             </div>
 
             {/* Overview Cards */}
