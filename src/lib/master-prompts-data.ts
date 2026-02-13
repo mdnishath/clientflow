@@ -1192,5 +1192,221 @@ export const MASTER_PROMPTS_DATA: MasterPrompt[] = [
         category: "Gardener",
         title: "Mulching (No Name)",
         prompt: `1.context: Spread new mulch in all flower beds. Looks fresh and tidy. 2.word limit: 25-35 3.name include in reviewtex: no`
+    },
+
+    // ============================================
+    // MOVING COMPANY (WITH NAME)
+    // ============================================
+    {
+        category: "Moving Company",
+        title: "Full Service Move (With Name)",
+        prompt: `1.context: Packed, moved, and unpacked everything. Stress-free experience. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Moving Company",
+        title: "Long Distance (With Name)",
+        prompt: `1.context: Moved us across the country. Everything arrived on time and intact. 2.word limit: 35-45 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Moving Company",
+        title: "Local Move (With Name)",
+        prompt: `1.context: Short move within the same city. Fast, efficient, and friendly crew. 2.word limit: 25-35 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Moving Company",
+        title: "Office Move (With Name)",
+        prompt: `1.context: Relocated our entire office over the weekend. Ready to work Monday morning. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Moving Company",
+        title: "Piano Moving (With Name)",
+        prompt: `1.context: Moved our grand piano safely. Very specialized and careful handling. 2.word limit: 25-35 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Moving Company",
+        title: "Packing Service (With Name)",
+        prompt: `1.context: They packed our entire house in one day. Labeled everything clearly. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Moving Company",
+        title: "Storage Solutions (With Name)",
+        prompt: `1.context: Stored our furniture for a month between moves. Secure and clean facility. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Moving Company",
+        title: "Last Minute Move (With Name)",
+        prompt: `1.context: Accommodated us on short notice when other movers canceled. Lifesavers. 2.word limit: 35-45 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Moving Company",
+        title: "Senior Move (With Name)",
+        prompt: `1.context: Helped my parents downsize. Very patient and respectful crew. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Moving Company",
+        title: "Appliance Moving (With Name)",
+        prompt: `1.context: Moved heavy appliances including washer, dryer, and fridge. No scratches. 2.word limit: 25-35 3.name include in reviewtex: yes`
+    },
+
+    // ============================================
+    // MOVING COMPANY (NO NAME)
+    // ============================================
+    {
+        category: "Moving Company",
+        title: "Full Service Move (No Name)",
+        prompt: `1.context: Packed, moved, and unpacked everything. Stress-free experience. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Moving Company",
+        title: "Long Distance (No Name)",
+        prompt: `1.context: Moved us across the country. Everything arrived on time and intact. 2.word limit: 35-45 3.name include in reviewtex: no`
+    },
+    {
+        category: "Moving Company",
+        title: "Local Move (No Name)",
+        prompt: `1.context: Short move within the same city. Fast, efficient, and friendly crew. 2.word limit: 25-35 3.name include in reviewtex: no`
+    },
+    {
+        category: "Moving Company",
+        title: "Office Move (No Name)",
+        prompt: `1.context: Relocated our entire office over the weekend. Ready to work Monday morning. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Moving Company",
+        title: "Piano Moving (No Name)",
+        prompt: `1.context: Moved our grand piano safely. Very specialized and careful handling. 2.word limit: 25-35 3.name include in reviewtex: no`
+    },
+    {
+        category: "Moving Company",
+        title: "Packing Service (No Name)",
+        prompt: `1.context: They packed our entire house in one day. Labeled everything clearly. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Moving Company",
+        title: "Storage Solutions (No Name)",
+        prompt: `1.context: Stored our furniture for a month between moves. Secure and clean facility. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Moving Company",
+        title: "Last Minute Move (No Name)",
+        prompt: `1.context: Accommodated us on short notice when other movers canceled. Lifesavers. 2.word limit: 35-45 3.name include in reviewtex: no`
+    },
+    {
+        category: "Moving Company",
+        title: "Senior Move (No Name)",
+        prompt: `1.context: Helped my parents downsize. Very patient and respectful crew. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Moving Company",
+        title: "Appliance Moving (No Name)",
+        prompt: `1.context: Moved heavy appliances including washer, dryer, and fridge. No scratches. 2.word limit: 25-35 3.name include in reviewtex: no`
+    },
+
+    // ============================================
+    // PAINTER (WITH NAME)
+    // ============================================
+    {
+        category: "Painter",
+        title: "Interior Paint (With Name)",
+        prompt: `1.context: Painted the whole interior. Crisp lines and smooth finish. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Painter",
+        title: "Exterior Paint (With Name)",
+        prompt: `1.context: Painted the exterior of our house. It looks brand new. Great curb appeal. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Painter",
+        title: "Cabinet Refinishing (With Name)",
+        prompt: `1.context: Refinished our kitchen cabinets. Factory-like quality. Saved us a fortune. 2.word limit: 35-45 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Painter",
+        title: "Wallpaper Removal (With Name)",
+        prompt: `1.context: Removed layers of old wallpaper and skimmed the walls. Ready for paint. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Painter",
+        title: "Deck Staining (With Name)",
+        prompt: `1.context: Stained and sealed our deck. Beautiful color and protection from weather. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Painter",
+        title: "Fence Painting (With Name)",
+        prompt: `1.context: Painted our privacy fence. Fast efficient and shielded plants. 2.word limit: 25-35 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Painter",
+        title: "Commercial Painting (With Name)",
+        prompt: `1.context: Painted our office space. Worked after hours to avoid disruption. 2.word limit: 35-45 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Painter",
+        title: "Trim & Doors (With Name)",
+        prompt: `1.context: Painted all trim and doors in the house. High gloss finish is perfect. 2.word limit: 30-40 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Painter",
+        title: "Color Consultation (With Name)",
+        prompt: `1.context: Helped us choose the perfect color palette. We love the new look. 2.word limit: 25-35 3.name include in reviewtex: yes`
+    },
+    {
+        category: "Painter",
+        title: "Plaster Repair (With Name)",
+        prompt: `1.context: Repaired plaster cracks before painting. Seamless finish. 2.word limit: 25-30 3.name include in reviewtex: yes`
+    },
+
+    // ============================================
+    // PAINTER (NO NAME)
+    // ============================================
+    {
+        category: "Painter",
+        title: "Interior Paint (No Name)",
+        prompt: `1.context: Painted the whole interior. Crisp lines and smooth finish. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Painter",
+        title: "Exterior Paint (No Name)",
+        prompt: `1.context: Painted the exterior of our house. It looks brand new. Great curb appeal. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Painter",
+        title: "Cabinet Refinishing (No Name)",
+        prompt: `1.context: Refinished our kitchen cabinets. Factory-like quality. Saved us a fortune. 2.word limit: 35-45 3.name include in reviewtex: no`
+    },
+    {
+        category: "Painter",
+        title: "Wallpaper Removal (No Name)",
+        prompt: `1.context: Removed layers of old wallpaper and skimmed the walls. Ready for paint. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Painter",
+        title: "Deck Staining (No Name)",
+        prompt: `1.context: Stained and sealed our deck. Beautiful color and protection from weather. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Painter",
+        title: "Fence Painting (No Name)",
+        prompt: `1.context: Painted our privacy fence. Fast efficient and shielded plants. 2.word limit: 25-35 3.name include in reviewtex: no`
+    },
+    {
+        category: "Painter",
+        title: "Commercial Painting (No Name)",
+        prompt: `1.context: Painted our office space. Worked after hours to avoid disruption. 2.word limit: 35-45 3.name include in reviewtex: no`
+    },
+    {
+        category: "Painter",
+        title: "Trim & Doors (No Name)",
+        prompt: `1.context: Painted all trim and doors in the house. High gloss finish is perfect. 2.word limit: 30-40 3.name include in reviewtex: no`
+    },
+    {
+        category: "Painter",
+        title: "Color Consultation (No Name)",
+        prompt: `1.context: Helped us choose the perfect color palette. We love the new look. 2.word limit: 25-35 3.name include in reviewtex: no`
+    },
+    {
+        category: "Painter",
+        title: "Plaster Repair (No Name)",
+        prompt: `1.context: Repaired plaster cracks before painting. Seamless finish. 2.word limit: 25-30 3.name include in reviewtex: no`
     }
 ];
