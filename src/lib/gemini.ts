@@ -360,13 +360,98 @@ Only output the Bangla translation.`;
 
 
 // ============================================
-// MASTER PROMPT GENERATION (STRICT)
+// MASTER PROMPT GENERATION (STRICT & STRUCTURED)
 // ============================================
+
+/**
+ * Handle specific "1.context... 2.word limit..." structured prompts
+ */
+async function generateFromStructuredPrompt(params: {
+    context: string;
+    wordLimit: string;
+    nameInclude: boolean;
+    businessName?: string;
+    category: string;
+}): Promise<string> {
+    const { context, wordLimit, nameInclude, businessName, category } = params;
+
+    // Construct a highly specific prompt for this use case
+    const prompt = `You are a genuine French client writing a review for a business.
+    
+DETAILS:
+- CATEGORY: ${category}
+- CONTEXT provided by user: "${context}"
+- WORD LIMIT: ${wordLimit} words (Strictly enforce this range)
+- INCLUDE BUSINESS NAME: ${nameInclude ? "YES" : "NO"}
+${nameInclude && businessName ? `- BUSINESS NAME to include: "${businessName}"` : ""}
+
+INSTRUCTIONS:
+1. Write the review ENTIRELY IN FRENCH.
+2. ADOPT A PERSONA: Sound like a real local person. Use "on" instead of "nous". Use natural connectors (bon, du coup, en fait).
+3. BYPASS AI DETECTION:
+   - Avoid perfect grammar.
+   - Avoid typical AI phrases like "Je recommande vivement", "Une expérience inoubliable", "Ce joyau caché".
+   - Be direct and authentic.
+4. NAME HANDLING:
+   - If "INCLUDE BUSINESS NAME" is YES, you MUST mention the name "${businessName}" naturally in the text.
+   - If "INCLUDE BUSINESS NAME" is NO, refer to it genericially (le resto, ce magasin, l'équipe, ils).
+5. LENGTH:
+   - You MUST stay within the ${wordLimit} word range. 
+   - Count your words.
+
+OUTPUT:
+- Only the review text. No quotes. No "Review:".
+`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.0-flash", // Using Flash for speed and instruction following
+            contents: prompt,
+            config: {
+                temperature: 0.95, // High creativity for human-like variance
+                topP: 0.95,
+                topK: 40
+            },
+        });
+
+        let text = response.text?.trim() || "";
+        text = text.replace(/^["'«»『』「」]+|["'«»『』「」]+$/g, "");
+        return text;
+    } catch (error) {
+        console.error("Structured prompt generation error:", error);
+        throw new Error("Failed to generate structured review");
+    }
+}
 
 export async function generateStrictMasterPrompt(
     category: string,
-    masterPrompt: string
+    masterPrompt: string,
+    businessName?: string
 ): Promise<string> {
+    // Check for the specific structured format:
+    // 1.context: ... 2.word limit: ... 3.name include in reviewtex: ...
+    // Regex allows for some flexibility in spacing and "reviewtex" typo
+    // Using [\s\S] instead of dotAll flag for compatibility
+    const structuredRegex = /1\.\s*context\s*:([\s\S]*?)2\.\s*word\s*limit\s*:([\s\S]*?)3\.\s*name\s*include.*?:([\s\S]*?)$/i;
+    const match = masterPrompt.match(structuredRegex);
+
+    if (match) {
+        console.log("Detected Custom Structured Prompt");
+        const context = match[1].trim();
+        const wordLimit = match[2].trim();
+        const nameIncludeStr = match[3].trim().toLowerCase();
+        const nameInclude = nameIncludeStr.includes("yes");
+
+        return generateFromStructuredPrompt({
+            context,
+            wordLimit,
+            nameInclude,
+            businessName,
+            category
+        });
+    }
+
+    // FALLBACK TO ORIGINAL LEGACY LOGIC
     // Dynamic Variance Injection
     const personas = [
         "a relieved homeowner who was stressed",

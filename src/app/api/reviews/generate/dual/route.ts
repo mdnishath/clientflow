@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
             console.log("Using Strict Master Prompt Mode");
             // Import dynamically to avoid circular deps if any (though strict prompt is in gemini.ts)
             const { generateStrictMasterPrompt } = await import("@/lib/gemini");
-            french = await generateStrictMasterPrompt(businessCategory, userHint);
+            french = await generateStrictMasterPrompt(businessCategory, userHint, profile.businessName);
         } else {
             // Use the anti-AI detection prompt system
             prompt = getHumanLikePrompt(humanConfig);
