@@ -77,6 +77,29 @@ export async function GET(request: NextRequest) {
             orderBy: { updatedAt: "desc" },
         });
 
+        // Get reviews with DONE status completed by this worker
+        const doneReviews = await prisma.review.findMany({
+            where: {
+                status: "DONE",
+                OR: [
+                    { liveById: targetWorkerId },
+                    { updatedById: targetWorkerId }
+                ],
+                ...(Object.keys(dateFilter).length > 0 && { completedAt: dateFilter }),
+            },
+            select: {
+                id: true,
+                completedAt: true,
+                profile: {
+                    select: {
+                        id: true,
+                        businessName: true,
+                    },
+                },
+            },
+            orderBy: { completedAt: "desc" },
+        });
+
         // Group by date
         const stats: any = {};
 
@@ -84,7 +107,7 @@ export async function GET(request: NextRequest) {
             const date = review.liveAt?.toISOString().split("T")[0];
             if (date) {
                 if (!stats[date]) {
-                    stats[date] = { date, liveCount: 0, appliedCount: 0, totalEarnings: 0, reviews: [] };
+                    stats[date] = { date, liveCount: 0, appliedCount: 0, doneCount: 0, totalEarnings: 0, reviews: [] };
                 }
                 stats[date].liveCount++;
                 stats[date].totalEarnings += 20; // 20 BDT per LIVE
@@ -101,7 +124,7 @@ export async function GET(request: NextRequest) {
             const date = review.updatedAt?.toISOString().split("T")[0];
             if (date) {
                 if (!stats[date]) {
-                    stats[date] = { date, liveCount: 0, appliedCount: 0, totalEarnings: 0, reviews: [] };
+                    stats[date] = { date, liveCount: 0, appliedCount: 0, doneCount: 0, totalEarnings: 0, reviews: [] };
                 }
                 stats[date].appliedCount++;
                 stats[date].totalEarnings += 5; // 5 BDT per APPLIED
@@ -110,6 +133,24 @@ export async function GET(request: NextRequest) {
                     type: "APPLIED",
                     businessName: review.profile.businessName,
                     timestamp: review.updatedAt,
+                });
+            }
+        });
+
+        doneReviews.forEach((review) => {
+            const date = review.completedAt?.toISOString().split("T")[0];
+            if (date) {
+                if (!stats[date]) {
+                    stats[date] = { date, liveCount: 0, appliedCount: 0, doneCount: 0, totalEarnings: 0, reviews: [] };
+                }
+                stats[date].doneCount++;
+                // DONE reviews already counted in LIVE (they were APPLIED+LIVE badge)
+                // So no additional earnings here
+                stats[date].reviews.push({
+                    id: review.id,
+                    type: "DONE",
+                    businessName: review.profile.businessName,
+                    timestamp: review.completedAt,
                 });
             }
         });
@@ -123,8 +164,9 @@ export async function GET(request: NextRequest) {
         const totals = dailyStats.reduce((acc: any, day: any) => ({
             liveCount: acc.liveCount + day.liveCount,
             appliedCount: acc.appliedCount + day.appliedCount,
+            doneCount: acc.doneCount + day.doneCount,
             totalEarnings: acc.totalEarnings + day.totalEarnings,
-        }), { liveCount: 0, appliedCount: 0, totalEarnings: 0 });
+        }), { liveCount: 0, appliedCount: 0, doneCount: 0, totalEarnings: 0 });
 
         return NextResponse.json({
             dailyStats,

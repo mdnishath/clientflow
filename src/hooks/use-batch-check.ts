@@ -24,6 +24,7 @@ export interface BatchStats {
   live: number;
   missing: number;
   error: number;
+  done: number;
 }
 
 interface BatchCheckOptions {
@@ -52,6 +53,7 @@ export function useBatchCheck() {
     live: 0,
     missing: 0,
     error: 0,
+    done: 0,
   });
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -269,7 +271,7 @@ export function useBatchCheck() {
         status: 'running',
       });
 
-      setStats({ live: 0, missing: 0, error: 0 });
+      setStats({ live: 0, missing: 0, error: 0, done: 0 });
 
       try {
         // Mark all reviews as CHECKING in Redux
@@ -357,6 +359,7 @@ export function useBatchCheck() {
               live: data.status === 'LIVE' ? prev.live + 1 : prev.live,
               missing: data.status === 'MISSING' ? prev.missing + 1 : prev.missing,
               error: data.status === 'ERROR' ? prev.error + 1 : prev.error,
+              done: prev.done, // Keep done count (updated from service)
             };
             return newStats;
           });
@@ -411,7 +414,7 @@ export function useBatchCheck() {
             clearBatchState();
 
             toast.success(
-              `All ${totalReviews} reviews checked! ${stats.live} live, ${stats.missing} missing, ${stats.error} errors`
+              `All ${totalReviews} reviews checked! ${stats.done} done, ${stats.live} live, ${stats.missing} missing, ${stats.error} errors`
             );
 
             onComplete?.(stats);
@@ -497,7 +500,7 @@ export function useBatchCheck() {
     // Poll for progress via SSE or status endpoint
     return new Promise((resolve, reject) => {
       let processedCount = 0;
-      const batchStats: BatchStats = { live: 0, missing: 0, error: 0 };
+      const batchStats: BatchStats = { live: 0, missing: 0, error: 0, done: 0 };
 
       // Batched Redux updates to reduce client CPU load
       const updateBuffer: Array<{ id: string; checkStatus: string; lastCheckedAt: string }> = [];
@@ -654,6 +657,11 @@ export function useBatchCheck() {
           batchStats.error = resultsData.recentResults.filter((r: any) => r.status === 'ERROR').length;
         }
 
+        // Get DONE count from automation service stats
+        if (resultsData.stats && resultsData.stats.doneCount !== undefined) {
+          batchStats.done = resultsData.stats.doneCount;
+        }
+
         if (completed >= expectedCount || data.stats.pending + data.stats.processing === 0) {
           clearInterval(pollInterval);
           resolve(batchStats);
@@ -758,6 +766,7 @@ export function useBatchCheck() {
       live: 0,
       missing: 0,
       error: 0,
+      done: 0,
     });
 
     setIsProcessing(false);

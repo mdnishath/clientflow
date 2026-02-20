@@ -1013,7 +1013,11 @@ export default function CheckerPage() {
                         </div>
 
                         {/* Stats */}
-                        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-700">
+                        <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-700">
+                            <div className="text-center">
+                                <div className="text-lg font-bold text-cyan-400">{batchStats.done || 0}</div>
+                                <div className="text-xs text-slate-400">Done</div>
+                            </div>
                             <div className="text-center">
                                 <div className="text-lg font-bold text-emerald-400">{batchStats.live}</div>
                                 <div className="text-xs text-slate-400">Live</div>

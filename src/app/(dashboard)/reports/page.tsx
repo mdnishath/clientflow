@@ -121,6 +121,7 @@ function ReportCard({
 interface KPIData {
     totalReviews: number;
     liveReviews: number;
+    doneReviews: number;
     pendingReviews: number;
     issueReviews: number;
     successRate: number;
@@ -143,6 +144,7 @@ interface ClientRanking {
     name: string;
     totalReviews: number;
     liveReviews: number;
+    doneReviews: number;
     successRate: number;
 }
 
@@ -352,7 +354,7 @@ export default function ReportsPage() {
                         exportFormats={["excel", "pdf"]}
                         loading={loading}
                     >
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                             <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700/50">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-xs text-slate-400 uppercase">Total Reviews</span>
@@ -369,7 +371,15 @@ export default function ReportsPage() {
                                     <CheckCircle2 size={16} className="text-emerald-400" />
                                 </div>
                                 <div className="text-2xl font-bold text-emerald-400">{kpiData?.liveReviews || 0}</div>
-                                <div className="text-xs text-slate-400 mt-1">{kpiData?.successRate || 0}% success rate</div>
+                                <div className="text-xs text-slate-400 mt-1">Currently live</div>
+                            </div>
+                            <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs text-slate-400 uppercase">Done</span>
+                                    <CheckCircle2 size={16} className="text-cyan-400" />
+                                </div>
+                                <div className="text-2xl font-bold text-cyan-400">{kpiData?.doneReviews || 0}</div>
+                                <div className="text-xs text-slate-400 mt-1">Completed</div>
                             </div>
                             <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-700/50">
                                 <div className="flex items-center justify-between mb-2">
@@ -480,6 +490,8 @@ export default function ReportsPage() {
                                         </div>
                                         <div className="flex items-center gap-4">
                                             <span className="text-sm text-slate-400">{client.totalReviews} reviews</span>
+                                            <span className="text-sm text-emerald-400">{client.liveReviews} live</span>
+                                            <span className="text-sm text-cyan-400">{client.doneReviews || 0} done</span>
                                             <span className={`text-sm font-medium ${
                                                 client.successRate >= 70 ? "text-green-400" : client.successRate >= 40 ? "text-yellow-400" : "text-red-400"
                                             }`}>

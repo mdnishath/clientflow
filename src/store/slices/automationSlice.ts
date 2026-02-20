@@ -14,6 +14,7 @@ interface QueueStats {
   liveCount: number;
   missingCount: number;
   errorCount: number;
+  doneCount: number;
   isStopped: boolean;
   progress: number;
 }
@@ -32,6 +33,7 @@ const initialState: AutomationState = {
     liveCount: 0,
     missingCount: 0,
     errorCount: 0,
+    doneCount: 0,
     isStopped: false,
     progress: 0,
   },

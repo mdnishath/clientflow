@@ -64,6 +64,7 @@ async function getDashboardData(userId: string, role: string, clientId: string |
         pendingReviews,
         inProgressReviews,
         liveReviews,
+        doneReviews,
         issueReviews,
         missingReviews,
     ] = await Promise.all([
@@ -73,6 +74,7 @@ async function getDashboardData(userId: string, role: string, clientId: string |
         prisma.review.count({ where: { ...reviewWhere, status: "PENDING" } }),
         prisma.review.count({ where: { ...reviewWhere, status: "IN_PROGRESS" } }),
         prisma.review.count({ where: { ...reviewWhere, status: "LIVE" } }),
+        prisma.review.count({ where: { ...reviewWhere, status: "DONE" } }),
         prisma.review.count({
             where: {
                 ...reviewWhere,
@@ -176,6 +178,7 @@ async function getDashboardData(userId: string, role: string, clientId: string |
         pendingReviews,
         inProgressReviews,
         liveReviews,
+        doneReviews,
         issueReviews,
         missingReviews,
         overdueReviews,
@@ -239,6 +242,7 @@ export default async function DashboardPage() {
                 totalReviews={data.totalReviews}
                 pendingReviews={data.pendingReviews}
                 liveReviews={data.liveReviews}
+                doneReviews={data.doneReviews}
                 issueReviews={data.issueReviews}
                 isClient={role === "CLIENT"}
             />

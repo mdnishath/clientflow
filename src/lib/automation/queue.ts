@@ -136,6 +136,7 @@ export class AutomationQueue {
       liveCount,
       missingCount,
       errorCount,
+      doneCount: 0, // Not tracked in queue, tracked in automation service
       isStopped: this.isStopped,
       progress: totalJobs > 0 ? Math.round((this.completed.size / totalJobs) * 100) : 0,
     };

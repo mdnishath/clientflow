@@ -16,6 +16,7 @@ interface ClientDashboardProps {
     totalReviews: number;
     pendingReviews: number;
     liveReviews: number;
+    doneReviews: number;
     issueReviews: number;
     isClient: boolean;
 }
@@ -25,6 +26,7 @@ export function ClientDashboard({
     totalReviews,
     pendingReviews,
     liveReviews,
+    doneReviews,
     issueReviews,
     isClient,
 }: ClientDashboardProps) {
@@ -43,7 +45,7 @@ export function ClientDashboard({
             </div>
 
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 {/* Total Profiles */}
                 <Link href="/profiles">
                     <Card className="bg-gradient-to-br from-indigo-900/30 to-slate-800/50 border-slate-700 hover:border-indigo-500/50 transition-all cursor-pointer">
@@ -87,9 +89,23 @@ export function ClientDashboard({
                         </CardHeader>
                         <CardContent>
                             <div className="text-3xl font-bold text-green-400">{liveReviews}</div>
-                            <p className="text-xs text-slate-400 mt-1">
-                                {completionRate}% completion rate
-                            </p>
+                            <p className="text-xs text-slate-400 mt-1">Currently live</p>
+                        </CardContent>
+                    </Card>
+                </Link>
+
+                {/* DONE Reviews */}
+                <Link href="/reviews?status=DONE">
+                    <Card className="bg-gradient-to-br from-cyan-900/30 to-slate-800/50 border-slate-700 hover:border-cyan-500/50 transition-all cursor-pointer">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium text-slate-400 flex items-center gap-2">
+                                <CheckCircle2 className="h-4 w-4" />
+                                DONE
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-3xl font-bold text-cyan-400">{doneReviews}</div>
+                            <p className="text-xs text-slate-400 mt-1">Completed</p>
                         </CardContent>
                     </Card>
                 </Link>
@@ -131,10 +147,14 @@ export function ClientDashboard({
                     </div>
 
                     {/* Stats Breakdown */}
-                    <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-700">
+                    <div className="grid grid-cols-4 gap-4 pt-4 border-t border-slate-700">
                         <div className="text-center">
                             <div className="text-2xl font-bold text-green-400">{liveReviews}</div>
                             <div className="text-xs text-slate-400 mt-1">LIVE</div>
+                        </div>
+                        <div className="text-center">
+                            <div className="text-2xl font-bold text-cyan-400">{doneReviews}</div>
+                            <div className="text-xs text-slate-400 mt-1">DONE</div>
                         </div>
                         <div className="text-center">
                             <div className="text-2xl font-bold text-yellow-400">{pendingReviews}</div>

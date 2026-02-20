@@ -10,12 +10,15 @@ import Link from "next/link";
 
 export default function PerformancePage() {
     const { data: session } = useSession();
-    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+    const [mounted, setMounted] = useState(false);
+    const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
     const [dailyStats, setDailyStats] = useState<any[]>([]);
     const [dayDetails, setDayDetails] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        setMounted(true);
+        setSelectedDate(new Date());
         fetchDailyStats();
     }, []);
 
@@ -63,12 +66,19 @@ export default function PerformancePage() {
                         <CardTitle className="text-white">Select Date</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <Calendar
-                            mode="single"
-                            selected={selectedDate}
-                            onSelect={(date) => date && setSelectedDate(date)}
-                            className="rounded-md border border-slate-700"
-                        />
+                        {mounted && selectedDate && (
+                            <Calendar
+                                mode="single"
+                                selected={selectedDate}
+                                onSelect={(date) => date && setSelectedDate(date)}
+                                className="rounded-md border border-slate-700"
+                            />
+                        )}
+                        {!mounted && (
+                            <div className="h-[300px] flex items-center justify-center text-slate-400">
+                                Loading calendar...
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
@@ -76,7 +86,7 @@ export default function PerformancePage() {
                 <Card className="bg-slate-800 border-slate-700 lg:col-span-2">
                     <CardHeader>
                         <CardTitle className="text-white">
-                            {selectedDate.toLocaleDateString("en-US", {
+                            {selectedDate && selectedDate.toLocaleDateString("en-US", {
                                 weekday: "long",
                                 year: "numeric",
                                 month: "long",
@@ -87,7 +97,11 @@ export default function PerformancePage() {
                     <CardContent>
                         {dayDetails ? (
                             <div className="space-y-4">
-                                <div className="grid grid-cols-3 gap-4">
+                                <div className="grid grid-cols-4 gap-4">
+                                    <div className="bg-cyan-600/20 p-4 rounded-lg">
+                                        <div className="text-cyan-400 text-sm">DONE</div>
+                                        <div className="text-2xl font-bold text-white">{dayDetails.doneCount || 0}</div>
+                                    </div>
                                     <div className="bg-green-600/20 p-4 rounded-lg">
                                         <div className="text-green-400 text-sm">LIVE Reviews</div>
                                         <div className="text-2xl font-bold text-white">{dayDetails.liveCount}</div>
@@ -162,6 +176,7 @@ export default function PerformancePage() {
                                 <thead>
                                     <tr className="border-b border-slate-700">
                                         <th className="text-left py-3 px-4 text-slate-400">Date</th>
+                                        <th className="text-left py-3 px-4 text-slate-400">DONE</th>
                                         <th className="text-left py-3 px-4 text-slate-400">LIVE</th>
                                         <th className="text-left py-3 px-4 text-slate-400">APPLIED</th>
                                         <th className="text-left py-3 px-4 text-slate-400">Earnings</th>
@@ -176,6 +191,9 @@ export default function PerformancePage() {
                                         >
                                             <td className="py-3 px-4 text-white">
                                                 {new Date(day.date).toLocaleDateString()}
+                                            </td>
+                                            <td className="py-3 px-4 text-cyan-400 font-medium">
+                                                {day.doneCount || 0}
                                             </td>
                                             <td className="py-3 px-4 text-green-400 font-medium">
                                                 {day.liveCount}

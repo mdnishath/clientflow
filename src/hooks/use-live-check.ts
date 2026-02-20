@@ -31,6 +31,7 @@ const INITIAL_STATS: QueueStats = {
     liveCount: 0,
     missingCount: 0,
     errorCount: 0,
+    doneCount: 0,
     isStopped: false,
     progress: 0,
 };
@@ -134,7 +135,7 @@ export function useLiveCheck(onComplete?: () => void) {
                             console.log("✅ Live Check Completed (SSE)");
                             setStatus("COMPLETE");
                             hasCompletedRef.current = true;
-                            toast.success(`Checks complete: ${newStats.liveCount} live, ${newStats.missingCount} missing`);
+                            toast.success(`Checks complete: ${newStats.doneCount} done, ${newStats.liveCount} live, ${newStats.missingCount} missing`);
                             onComplete?.();
                         } else if (newStats.total === 0) {
                             if (currentStatus !== "IDLE" && currentStatus !== "STARTING") {

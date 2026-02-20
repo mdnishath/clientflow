@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     // Group by client and calculate stats
     const clientStats: Record<
       string,
-      { id: string; name: string; totalReviews: number; liveReviews: number }
+      { id: string; name: string; totalReviews: number; liveReviews: number; doneReviews: number }
     > = {};
 
     reviews.forEach((review) => {
@@ -68,12 +68,15 @@ export async function GET(request: NextRequest) {
           name: clientName,
           totalReviews: 0,
           liveReviews: 0,
+          doneReviews: 0,
         };
       }
 
       clientStats[clientId].totalReviews++;
-      if (review.status === "LIVE" || review.status === "DONE") {
+      if (review.status === "LIVE") {
         clientStats[clientId].liveReviews++;
+      } else if (review.status === "DONE") {
+        clientStats[clientId].doneReviews++;
       }
     });
 
@@ -84,9 +87,10 @@ export async function GET(request: NextRequest) {
         name: client.name,
         totalReviews: client.totalReviews,
         liveReviews: client.liveReviews,
+        doneReviews: client.doneReviews,
         successRate:
           client.totalReviews > 0
-            ? Math.round((client.liveReviews / client.totalReviews) * 100)
+            ? Math.round(((client.liveReviews + client.doneReviews) / client.totalReviews) * 100)
             : 0,
       }))
       .sort((a, b) => b.totalReviews - a.totalReviews) // Sort by total reviews

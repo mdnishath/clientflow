@@ -21,6 +21,7 @@ interface AutomationState {
   liveCount: number;
   missingCount: number;
   errorCount: number;
+  doneCount: number;
 }
 
 class AutomationService {
@@ -37,6 +38,7 @@ class AutomationService {
     liveCount: 0,
     missingCount: 0,
     errorCount: 0,
+    doneCount: 0,
   };
 
   constructor() {
@@ -249,6 +251,7 @@ class AutomationService {
         liveCount: 0,     // Reset counters
         missingCount: 0,
         errorCount: 0,
+        doneCount: 0,
       };
 
       this.addLog(`Audit Sequence Engaged${batchInfo}`);
@@ -315,6 +318,7 @@ class AutomationService {
         liveCount: 0,
         missingCount: 0,
         errorCount: 0,
+        doneCount: 0,
         isStopped: true,
         progress: 0,
         message: 'Another user is currently running checks',
@@ -330,6 +334,7 @@ class AutomationService {
       liveCount: this.state.liveCount,      // ✅ Real count
       missingCount: this.state.missingCount, // ✅ Real count
       errorCount: this.state.errorCount,     // ✅ Real count
+      doneCount: this.state.doneCount,       // ✅ Real count
       isStopped: !this.state.isChecking,
       progress: this.state.totalTasks > 0
         ? Math.round((this.state.completedTasks / this.state.totalTasks) * 100)
@@ -353,6 +358,7 @@ class AutomationService {
       liveCount: 0,
       missingCount: 0,
       errorCount: 0,
+      doneCount: 0,
     };
 
     this.addLog("Queue reset successfully");
@@ -431,11 +437,17 @@ class AutomationService {
 
         const currentStatus = currentReview.status;
 
+        // Always update check metadata
         const updateData: any = {
           lastCheckedAt: result.checkedAt,
           checkStatus: result.status,
           screenshotPath: result.screenshotPath || null,
         };
+
+        // DEBUG LOG
+        console.log(`🔍 STATUS LOGIC: Review ${result.reviewId.slice(0, 8)} | Current: ${currentStatus} | Badge: ${result.status}`);
+
+        let statusChanged = false;
 
         // Apply the new status logic rules
         if (result.status === "LIVE") {
@@ -444,34 +456,66 @@ class AutomationService {
             // ✅ APPLIED + LIVE badge -> main status becomes DONE
             updateData.status = "DONE";
             updateData.completedAt = new Date();
+            statusChanged = true;
+            console.log(`   ✅ APPLIED + LIVE → DONE (status changed)`);
           } else if (currentStatus === "DONE") {
             // ✅ DONE + LIVE badge -> keep DONE (no change)
-            delete updateData.status;
+            console.log(`   ✅ DONE + LIVE → DONE (no change)`);
+          } else if (currentStatus === "LIVE") {
+            // LIVE + LIVE badge -> no change
+            console.log(`   ✅ LIVE + LIVE → LIVE (no change)`);
           } else {
             // For other statuses, set to LIVE
             updateData.status = "LIVE";
             updateData.completedAt = new Date();
+            statusChanged = true;
+            console.log(`   ⚠️ ${currentStatus} + LIVE → LIVE (status changed)`);
           }
         } else if (result.status === "MISSING") {
           // Badge is MISSING
           if (currentStatus === "APPLIED") {
             // APPLIED + MISSING badge -> keep APPLIED (no change)
-            delete updateData.status;
+            console.log(`   ✅ APPLIED + MISSING → APPLIED (no change)`);
+          } else if (currentStatus === "MISSING") {
+            // MISSING + MISSING badge -> no change
+            console.log(`   ✅ MISSING + MISSING → MISSING (no change)`);
           } else if (currentStatus === "DONE") {
             // ✅ DONE + MISSING badge -> change to MISSING
             updateData.status = "MISSING";
+            statusChanged = true;
+            console.log(`   ✅ DONE + MISSING → MISSING (status changed)`);
           } else {
             // For other statuses, set to MISSING
             updateData.status = "MISSING";
+            statusChanged = true;
+            console.log(`   ⚠️ ${currentStatus} + MISSING → MISSING (status changed)`);
           }
         }
         // For ERROR status, we don't change the main status, only checkStatus
+
+        // Only update updatedAt timestamp if status actually changed
+        if (statusChanged) {
+          updateData.updatedAt = new Date();
+          console.log(`   📅 Status changed - updating timestamp`);
+        } else {
+          console.log(`   ⏸️ Status unchanged - no timestamp update`);
+        }
 
         // Update within transaction
         await tx.review.update({
           where: { id: result.reviewId },
           data: updateData,
         });
+
+        // Track DONE count - check if final status is DONE
+        const finalStatus = updateData.status || currentStatus;
+        if (finalStatus === "DONE") {
+          // Only increment if status CHANGED to DONE (not if it was already DONE)
+          if (currentStatus !== "DONE") {
+            this.state.doneCount++;
+            console.log(`   📊 DONE count: ${this.state.doneCount}`);
+          }
+        }
       }, {
         isolationLevel: 'ReadCommitted', // Prevent dirty reads
         timeout: 10000, // 10 second timeout

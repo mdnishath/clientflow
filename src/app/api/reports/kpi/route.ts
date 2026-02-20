@@ -49,12 +49,13 @@ export async function GET(request: NextRequest) {
       statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
     });
 
-    const liveReviews = (statusCounts["LIVE"] || 0) + (statusCounts["DONE"] || 0);
+    const liveReviews = statusCounts["LIVE"] || 0;
+    const doneReviews = statusCounts["DONE"] || 0;
     const pendingReviews = statusCounts["PENDING"] || 0;
     const missingReviews = statusCounts["MISSING"] || 0;
     const errorReviews = statusCounts["GOOGLE_ISSUE"] || 0;
     const issueReviews = missingReviews + errorReviews;
-    const successRate = totalReviews > 0 ? Math.round((liveReviews / totalReviews) * 100) : 0;
+    const successRate = totalReviews > 0 ? Math.round(((liveReviews + doneReviews) / totalReviews) * 100) : 0;
 
     // Calculate average completion time
     const completedReviews = allReviews.filter((r) => r.completedAt);
@@ -95,6 +96,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       totalReviews,
       liveReviews,
+      doneReviews,
       pendingReviews,
       issueReviews,
       successRate,

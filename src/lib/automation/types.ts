@@ -41,6 +41,7 @@ export interface QueueStats {
   liveCount: number;
   missingCount: number;
   errorCount: number;
+  doneCount: number;
   isStopped: boolean;
   progress: number; // Percentage 0-100
 }
