@@ -23,6 +23,7 @@ import {
     UserCog,
     ArrowRightLeft,
     DollarSign,
+    TrendingUp,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ const navigation: NavItem[] = [
     { name: "Reviews", href: "/reviews", icon: Star },
     { name: "Profiles", href: "/profiles", icon: Store }, // Both admin and client can see
     { name: "Checker", href: "/checker", icon: Activity },
+    { name: "Performance", href: "/performance", icon: TrendingUp }, // Daily stats for all
     { name: "Generator", href: "/generator", icon: Wand2, adminOnly: true },
     { name: "Reports", href: "/reports", icon: BarChart3 },
     { name: "Settings", href: "/settings", icon: User }, // Account settings (password)
