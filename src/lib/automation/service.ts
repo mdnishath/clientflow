@@ -399,11 +399,20 @@ class AutomationService {
 
   /**
    * Update review result in database
-   * NEW STATUS LOGIC RULES:
-   * - If main status is APPLIED and badge is MISSING -> keep APPLIED (don't change)
-   * - If main status is APPLIED and badge is LIVE -> change to LIVE
-   * - If both badges MISSING -> change to MISSING
-   * - If both badges LIVE -> change to LIVE
+   * STATUS LOGIC RULES:
+   *
+   * When badge is LIVE:
+   * - APPLIED + LIVE → DONE ✅
+   * - DONE + LIVE → DONE (no change) ✅
+   * - Other + LIVE → LIVE
+   *
+   * When badge is MISSING:
+   * - APPLIED + MISSING → APPLIED (no change) ✅
+   * - DONE + MISSING → MISSING ✅
+   * - Other + MISSING → MISSING
+   *
+   * When badge is ERROR:
+   * - Keep current status (only update checkStatus)
    */
   private async updateReviewResult(result: CheckResult): Promise<void> {
     try {
@@ -432,9 +441,12 @@ class AutomationService {
         if (result.status === "LIVE") {
           // Badge is LIVE
           if (currentStatus === "APPLIED") {
-            // ✅ NEW RULE: APPLIED + LIVE badge -> main status becomes DONE
+            // ✅ APPLIED + LIVE badge -> main status becomes DONE
             updateData.status = "DONE";
             updateData.completedAt = new Date();
+          } else if (currentStatus === "DONE") {
+            // ✅ DONE + LIVE badge -> keep DONE (no change)
+            delete updateData.status;
           } else {
             // For other statuses, set to LIVE
             updateData.status = "LIVE";
@@ -443,9 +455,11 @@ class AutomationService {
         } else if (result.status === "MISSING") {
           // Badge is MISSING
           if (currentStatus === "APPLIED") {
-            // If main status is APPLIED and badge is MISSING -> keep APPLIED (no change)
-            // Don't update the main status, only update checkStatus
+            // APPLIED + MISSING badge -> keep APPLIED (no change)
             delete updateData.status;
+          } else if (currentStatus === "DONE") {
+            // ✅ DONE + MISSING badge -> change to MISSING
+            updateData.status = "MISSING";
           } else {
             // For other statuses, set to MISSING
             updateData.status = "MISSING";
