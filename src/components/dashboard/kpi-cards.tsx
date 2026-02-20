@@ -1,12 +1,13 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle2, Clock, AlertCircle, TrendingUp, Target } from "lucide-react";
+import { CheckCircle2, Clock, AlertCircle, TrendingUp, Target, Award } from "lucide-react";
 
 interface KPICardsProps {
     stats: {
         total: number;
         live: number;
+        done: number;
         pending: number;
         applied: number;
         missing: number;
@@ -31,6 +32,14 @@ export function KPICards({ stats, completionRate }: KPICardsProps) {
             color: "text-green-400",
             bgColor: "bg-green-500/20",
             trend: `${completionRate}% completion`,
+        },
+        {
+            label: "Done Reviews",
+            value: stats.done,
+            icon: Award,
+            color: "text-cyan-400",
+            bgColor: "bg-cyan-500/20",
+            trend: null,
         },
         {
             label: "Pending",
@@ -59,7 +68,7 @@ export function KPICards({ stats, completionRate }: KPICardsProps) {
     ];
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
             {kpis.map((kpi, index) => {
                 const Icon = kpi.icon;
                 return (
