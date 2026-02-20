@@ -430,9 +430,16 @@ class AutomationService {
 
         // Apply the new status logic rules
         if (result.status === "LIVE") {
-          // Badge is LIVE -> main status becomes LIVE (regardless of current status)
-          updateData.status = "LIVE";
-          updateData.completedAt = new Date();
+          // Badge is LIVE
+          if (currentStatus === "APPLIED") {
+            // ✅ NEW RULE: APPLIED + LIVE badge -> main status becomes DONE
+            updateData.status = "DONE";
+            updateData.completedAt = new Date();
+          } else {
+            // For other statuses, set to LIVE
+            updateData.status = "LIVE";
+            updateData.completedAt = new Date();
+          }
         } else if (result.status === "MISSING") {
           // Badge is MISSING
           if (currentStatus === "APPLIED") {

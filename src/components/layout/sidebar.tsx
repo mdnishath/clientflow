@@ -190,8 +190,9 @@ export function Sidebar() {
                         <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => signOut()}
+                            onClick={() => signOut({ callbackUrl: '/login', redirect: true })}
                             className="text-slate-400 hover:text-white"
+                            title="Logout"
                         >
                             <LogOut size={16} />
                         </Button>
