@@ -57,6 +57,17 @@ export async function GET(
             },
         });
 
+        // Get reviews marked as DONE by this worker
+        const doneReviews = await prisma.review.count({
+            where: {
+                OR: [
+                    { liveById: workerId },
+                    { updatedById: workerId },
+                ],
+                status: "DONE",
+            },
+        });
+
         // Get status breakdown for reviews worker touched
         const statusBreakdown = await prisma.review.groupBy({
             by: ["status"],
@@ -202,6 +213,7 @@ export async function GET(
             created: createdReviews,
             updated: updatedReviews,
             liveCount: liveReviews,
+            doneCount: doneReviews,
             totalTouched,
             successRate,
             thisWeek,

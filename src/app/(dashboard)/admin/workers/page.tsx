@@ -52,6 +52,7 @@ interface Worker {
         created: number;
         updated: number;
         liveCount: number;
+        doneCount: number;
         totalTouched: number;
         successRate: number;
         thisWeek: number;
@@ -103,8 +104,11 @@ const StatusPieChart = ({ data }: { data: Array<{ status: string; count: number 
     const total = data.reduce((sum, item) => sum + item.count, 0);
     const statusColors: Record<string, string> = {
         LIVE: "bg-emerald-500",
+        DONE: "bg-cyan-500",
         DRAFT: "bg-blue-500",
         PENDING: "bg-amber-500",
+        APPLIED: "bg-purple-500",
+        MISSING: "bg-yellow-500",
         REJECTED: "bg-red-500",
     };
 
@@ -332,6 +336,7 @@ export default function WorkersPage() {
         total: workers.length,
         avgPerformance: workers.reduce((sum, w) => sum + (w.stats?.successRate || 0), 0) / (workers.length || 1),
         totalLive: workers.reduce((sum, w) => sum + (w.stats?.liveCount || 0), 0),
+        totalDone: workers.reduce((sum, w) => sum + (w.stats?.doneCount || 0), 0),
         activeWorkers: workers.filter(w => (w.stats?.thisMonth || 0) > 0).length,
     };
 
@@ -360,7 +365,7 @@ export default function WorkersPage() {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
                 <Card className="bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/20 backdrop-blur-sm">
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
@@ -398,6 +403,20 @@ export default function WorkersPage() {
                             </div>
                             <div className="p-3 bg-emerald-500/20 rounded-xl">
                                 <Target className="text-emerald-400" size={24} />
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 border-cyan-500/20 backdrop-blur-sm">
+                    <CardContent className="p-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm text-cyan-300 font-medium">Total Done Reviews</p>
+                                <p className="text-3xl font-bold text-white mt-2">{stats.totalDone}</p>
+                            </div>
+                            <div className="p-3 bg-cyan-500/20 rounded-xl">
+                                <Award className="text-cyan-400" size={24} />
                             </div>
                         </div>
                     </CardContent>
@@ -553,18 +572,22 @@ export default function WorkersPage() {
                                 {/* Performance Stats */}
                                 {worker.stats && (
                                     <>
-                                        <div className="grid grid-cols-2 gap-3">
+                                        <div className="grid grid-cols-3 gap-3">
                                             <div className="bg-slate-800/50 rounded-lg p-3">
-                                                <p className="text-xs text-slate-400">Total Live</p>
+                                                <p className="text-xs text-slate-400">Live</p>
                                                 <p className="text-lg font-bold text-emerald-400 mt-1">{worker.stats.liveCount}</p>
                                             </div>
                                             <div className="bg-slate-800/50 rounded-lg p-3">
+                                                <p className="text-xs text-slate-400">Done</p>
+                                                <p className="text-lg font-bold text-cyan-400 mt-1">{worker.stats.doneCount || 0}</p>
+                                            </div>
+                                            <div className="bg-slate-800/50 rounded-lg p-3">
                                                 <p className="text-xs text-slate-400">This Month</p>
-                                                <p className="text-lg font-bold text-cyan-400 mt-1">{worker.stats.thisMonth}</p>
+                                                <p className="text-lg font-bold text-blue-400 mt-1">{worker.stats.thisMonth}</p>
                                             </div>
                                             <div className="bg-slate-800/50 rounded-lg p-3">
                                                 <p className="text-xs text-slate-400">This Week</p>
-                                                <p className="text-lg font-bold text-blue-400 mt-1">{worker.stats.thisWeek}</p>
+                                                <p className="text-lg font-bold text-purple-400 mt-1">{worker.stats.thisWeek}</p>
                                             </div>
                                             <div className="bg-slate-800/50 rounded-lg p-3">
                                                 <p className="text-xs text-slate-400">Success Rate</p>
@@ -648,13 +671,17 @@ export default function WorkersPage() {
                                             </td>
                                             <td className="py-4 px-6">
                                                 {worker.stats && (
-                                                    <div className="flex items-center justify-center gap-4">
+                                                    <div className="flex items-center justify-center gap-3">
                                                         <div className="text-center">
                                                             <p className="text-lg font-bold text-emerald-400">{worker.stats.liveCount}</p>
                                                             <p className="text-xs text-slate-500">Live</p>
                                                         </div>
                                                         <div className="text-center">
-                                                            <p className="text-lg font-bold text-cyan-400">{worker.stats.thisMonth}</p>
+                                                            <p className="text-lg font-bold text-cyan-400">{worker.stats.doneCount || 0}</p>
+                                                            <p className="text-xs text-slate-500">Done</p>
+                                                        </div>
+                                                        <div className="text-center">
+                                                            <p className="text-lg font-bold text-blue-400">{worker.stats.thisMonth}</p>
                                                             <p className="text-xs text-slate-500">Month</p>
                                                         </div>
                                                         <div className="text-center">
@@ -766,7 +793,7 @@ export default function WorkersPage() {
 
                             <TabsContent value="overview" className="space-y-4 mt-4">
                                 {/* Key Metrics */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                                     <Card className="bg-slate-800/50 border-slate-700">
                                         <CardContent className="p-4">
                                             <p className="text-xs text-slate-400 mb-1">Total Touched</p>
@@ -781,6 +808,12 @@ export default function WorkersPage() {
                                     </Card>
                                     <Card className="bg-slate-800/50 border-slate-700">
                                         <CardContent className="p-4">
+                                            <p className="text-xs text-slate-400 mb-1">Done Reviews</p>
+                                            <p className="text-2xl font-bold text-cyan-400">{detailsWorker.stats.doneCount || 0}</p>
+                                        </CardContent>
+                                    </Card>
+                                    <Card className="bg-slate-800/50 border-slate-700">
+                                        <CardContent className="p-4">
                                             <p className="text-xs text-slate-400 mb-1">Success Rate</p>
                                             <p className="text-2xl font-bold text-amber-400">{detailsWorker.stats.successRate}%</p>
                                         </CardContent>
@@ -788,7 +821,7 @@ export default function WorkersPage() {
                                     <Card className="bg-slate-800/50 border-slate-700">
                                         <CardContent className="p-4">
                                             <p className="text-xs text-slate-400 mb-1">This Month</p>
-                                            <p className="text-2xl font-bold text-cyan-400">{detailsWorker.stats.thisMonth}</p>
+                                            <p className="text-2xl font-bold text-blue-400">{detailsWorker.stats.thisMonth}</p>
                                         </CardContent>
                                     </Card>
                                 </div>
