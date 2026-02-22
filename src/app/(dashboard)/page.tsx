@@ -230,7 +230,7 @@ export default async function DashboardPage() {
                     </span>
                 </h1>
 
-                <DashboardHeaderActions />
+                <DashboardHeaderActions role={role} />
             </div>
 
             {/* Smart At-Risk Alerts */}

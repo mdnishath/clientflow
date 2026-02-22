@@ -13,8 +13,13 @@ import { UpdateLimitButton } from "@/components/dashboard/update-limit-button";
 import { DeletePendingButton } from "@/components/dashboard/delete-pending-button";
 import { AutoFillButton } from "@/components/dashboard/auto-fill-button";
 import { CleanupButton } from "@/components/dashboard/cleanup-button";
+import { DeleteMyDataButton } from "@/components/dashboard/delete-my-data-button";
 
-export function DashboardHeaderActions() {
+interface DashboardHeaderActionsProps {
+    role: string;
+}
+
+export function DashboardHeaderActions({ role }: DashboardHeaderActionsProps) {
     const [isDateDialogOpen, setIsDateDialogOpen] = useState(false);
 
     return (
@@ -33,6 +38,7 @@ export function DashboardHeaderActions() {
             <DeletePendingButton />
             <AutoFillButton />
             <CleanupButton />
+            {role === "ADMIN" && <DeleteMyDataButton />}
         </div>
     );
 }
