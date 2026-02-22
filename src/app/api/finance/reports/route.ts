@@ -170,37 +170,46 @@ export async function GET(request: NextRequest) {
         }
 
         if (reportType === "timeline" || reportType === "all") {
-            // Monthly breakdown - build query string dynamically
-            let query = `
-                SELECT
-                    DATE_TRUNC('month', "created_at") as month,
-                    COUNT(*) as count,
-                    SUM("total_amount") as total
-                FROM "invoices"
-                WHERE "status" = 'PAID'
-            `;
+            // Monthly breakdown using Prisma groupBy to avoid BigInt issues
+            try {
+                const paidInvoices = await prisma.invoice.findMany({
+                    where: {
+                        status: "PAID",
+                        ...(dateFilter.gte ? { createdAt: dateFilter } : {}),
+                    },
+                    select: { createdAt: true, totalAmount: true },
+                    orderBy: { createdAt: "desc" },
+                    take: 1000,
+                });
 
-            if (dateFilter.gte) {
-                query += ` AND "created_at" >= '${startDate}'`;
+                // Group by month in JS (no BigInt issue)
+                const monthMap: Record<string, { month: string; count: number; total: number }> = {};
+                for (const inv of paidInvoices) {
+                    const d = new Date(inv.createdAt);
+                    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                    if (!monthMap[key]) {
+                        monthMap[key] = { month: key + "-01", count: 0, total: 0 };
+                    }
+                    monthMap[key].count++;
+                    monthMap[key].total += inv.totalAmount;
+                }
+
+                report.timeline = Object.values(monthMap)
+                    .sort((a, b) => b.month.localeCompare(a.month))
+                    .slice(0, 12);
+            } catch (err) {
+                report.timeline = [];
             }
-            if (dateFilter.lte) {
-                query += ` AND "created_at" <= '${endDate}'`;
-            }
-
-            query += `
-                GROUP BY DATE_TRUNC('month', "created_at")
-                ORDER BY month DESC
-                LIMIT 12
-            `;
-
-            const monthlyData = await prisma.$queryRawUnsafe(query) as any;
-
-            report.timeline = monthlyData;
         }
 
         logger.info(`Generated ${reportType} financial report`, { startDate, endDate }, "finance");
 
-        return NextResponse.json({ report, reportType, dateRange: { startDate, endDate } });
+        // Serialize safely — convert any BigInt to Number
+        const safeReport = JSON.parse(JSON.stringify(report, (_key, value) =>
+            typeof value === "bigint" ? Number(value) : value
+        ));
+
+        return NextResponse.json({ report: safeReport, reportType, dateRange: { startDate, endDate } });
     } catch (error) {
         logger.error("Failed to generate financial report", error, "finance");
         return NextResponse.json(

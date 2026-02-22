@@ -212,14 +212,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
             return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
         }
 
-        // Don't allow deletion of paid invoices
-        if (existing.status === "PAID") {
-            return NextResponse.json(
-                { error: "Cannot delete paid invoices" },
-                { status: 400 }
-            );
-        }
-
         await prisma.invoice.delete({ where: { id } });
 
         logger.info(

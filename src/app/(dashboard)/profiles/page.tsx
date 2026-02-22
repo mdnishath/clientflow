@@ -45,6 +45,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import { ProfileCard } from "@/components/profiles/profile-card";
+import { QRCodeModal } from "@/components/profiles/qr-code-modal";
 import { useAuth } from "@/hooks/useAuth";
 import {
     AlertDialog,
@@ -263,6 +264,7 @@ export default function ProfilesPage() {
     const [categories, setCategories] = useState<Category[]>([]);
     const [clients, setClients] = useState<Client[]>([]);
     const [loading, setLoading] = useState(true);
+    const [qrProfile, setQrProfile] = useState<{ id: string; businessName: string } | null>(null);
     const [search, setSearch] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("all");
     const [completionFilter, setCompletionFilter] = useState("all"); // all | completed | incomplete
@@ -710,6 +712,7 @@ export default function ProfilesPage() {
                                         setDeletingProfile(p);
                                         setDeleteDialogOpen(true);
                                     } : undefined}
+                                    onQR={(p) => setQrProfile({ id: p.id, businessName: p.businessName })}
                                     isAdmin={isAdmin}
                                 />
                             ))}
@@ -948,6 +951,12 @@ export default function ProfilesPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            {/* QR Code Modal */}
+            <QRCodeModal
+                profileId={qrProfile?.id || null}
+                businessName={qrProfile?.businessName}
+                onClose={() => setQrProfile(null)}
+            />
         </div >
     );
 }

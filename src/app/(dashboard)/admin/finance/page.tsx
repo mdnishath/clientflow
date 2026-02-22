@@ -17,6 +17,7 @@ import {
     Wallet,
     Receipt,
 } from "lucide-react";
+import { InvoiceManager } from "@/components/finance/invoice-manager";
 
 interface FinancialReport {
     overview: {
@@ -302,18 +303,13 @@ export default function FinancePage() {
                 <TabsContent value="invoices" className="space-y-4">
                     <Card className="bg-slate-800 border-slate-700">
                         <CardHeader>
-                            <CardTitle className="text-white">Invoice Management</CardTitle>
+                            <CardTitle className="text-white flex items-center gap-2">
+                                <FileText size={18} className="text-cyan-400" />
+                                Invoice Management
+                            </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="flex items-center justify-center py-12">
-                                <div className="text-center">
-                                    <FileText className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-                                    <p className="text-slate-400 mb-4">Invoice management coming soon</p>
-                                    <Button className="bg-cyan-600 hover:bg-cyan-700">
-                                        Create Invoice
-                                    </Button>
-                                </div>
-                            </div>
+                            <InvoiceManager />
                         </CardContent>
                     </Card>
                 </TabsContent>

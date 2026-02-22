@@ -33,7 +33,15 @@ import { AdvancedBackup } from "@/components/settings/advanced-backup";
 export default function SettingsPage() {
     const { isAdmin, user } = useAuth();
     const router = useRouter();
-    const [activeSection, setActiveSection] = useState<"profile" | "security" | "backup" | "advanced">("profile");
+    const [activeSection, setActiveSection] = useState<"profile" | "security" | "backup" | "advanced" | "email">("profile");
+    const [smtpHost, setSmtpHost] = useState("");
+    const [smtpPort, setSmtpPort] = useState("587");
+    const [smtpUser, setSmtpUser] = useState("");
+    const [smtpPass, setSmtpPass] = useState("");
+    const [smtpFrom, setSmtpFrom] = useState("");
+    const [testEmail, setTestEmail] = useState("");
+    const [isSavingEmail, setIsSavingEmail] = useState(false);
+    const [isTestingEmail, setIsTestingEmail] = useState(false);
 
     // Profile state
     const [name, setName] = useState(user?.name || "");
@@ -289,6 +297,21 @@ export default function SettingsPage() {
                                         >
                                             <Zap size={20} />
                                             <span className="font-medium">Advanced</span>
+                                            <Badge variant="secondary" className="ml-auto bg-amber-500/20 text-amber-400 border-amber-500/30">
+                                                Admin
+                                            </Badge>
+                                        </button>
+
+                                        <button
+                                            onClick={() => setActiveSection("email")}
+                                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                                                activeSection === "email"
+                                                    ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30"
+                                                    : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                                            }`}
+                                        >
+                                            <Sparkles size={20} />
+                                            <span className="font-medium">Email Config</span>
                                             <Badge variant="secondary" className="ml-auto bg-amber-500/20 text-amber-400 border-amber-500/30">
                                                 Admin
                                             </Badge>
@@ -660,6 +683,112 @@ export default function SettingsPage() {
                     {activeSection === "advanced" && isAdmin && (
                         <div className="space-y-6">
                             <AdvancedBackup />
+                        </div>
+                    )}
+
+                    {/* Email Config Section */}
+                    {activeSection === "email" && isAdmin && (
+                        <div className="space-y-6">
+                            <Card className="bg-slate-800/50 border-slate-700">
+                                <CardHeader>
+                                    <CardTitle className="text-white flex items-center gap-2">
+                                        <Sparkles size={20} className="text-indigo-400" />
+                                        Email Configuration (SMTP)
+                                    </CardTitle>
+                                    <CardDescription className="text-slate-400">
+                                        Configure SMTP to send invoice emails, welcome emails, and review requests.
+                                        Settings are saved to your .env file.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label className="text-slate-300">SMTP Host</Label>
+                                            <Input value={smtpHost} onChange={e => setSmtpHost(e.target.value)}
+                                                placeholder="smtp.gmail.com"
+                                                className="bg-slate-700/50 border-slate-600 text-white" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-slate-300">SMTP Port</Label>
+                                            <Input value={smtpPort} onChange={e => setSmtpPort(e.target.value)}
+                                                placeholder="587"
+                                                className="bg-slate-700/50 border-slate-600 text-white" />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-slate-300">Email (SMTP Username)</Label>
+                                        <Input value={smtpUser} onChange={e => setSmtpUser(e.target.value)}
+                                            type="email" placeholder="your@gmail.com"
+                                            className="bg-slate-700/50 border-slate-600 text-white" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-slate-300">Password / App Password</Label>
+                                        <Input value={smtpPass} onChange={e => setSmtpPass(e.target.value)}
+                                            type="password" placeholder="••••••••••••"
+                                            className="bg-slate-700/50 border-slate-600 text-white" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-slate-300">From Name (optional)</Label>
+                                        <Input value={smtpFrom} onChange={e => setSmtpFrom(e.target.value)}
+                                            placeholder="ClientFlow &lt;noreply@client-flow.xyz&gt;"
+                                            className="bg-slate-700/50 border-slate-600 text-white" />
+                                    </div>
+                                    <div className="p-4 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-sm text-indigo-300">
+                                        💡 <strong>Gmail:</strong> Use App Password (not your regular password). Go to Google Account → Security → 2-Step Verification → App Passwords.
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <Button
+                                            onClick={async () => {
+                                                setIsSavingEmail(true);
+                                                try {
+                                                    const res = await fetch("/api/admin/email-config", {
+                                                        method: "POST",
+                                                        headers: { "Content-Type": "application/json" },
+                                                        body: JSON.stringify({ host: smtpHost, port: smtpPort, user: smtpUser, pass: smtpPass, from: smtpFrom }),
+                                                    });
+                                                    if (res.ok) toast.success("Email config saved! Restart app to apply.");
+                                                    else toast.error("Failed to save email config");
+                                                } finally { setIsSavingEmail(false); }
+                                            }}
+                                            disabled={isSavingEmail}
+                                            className="bg-indigo-600 hover:bg-indigo-700"
+                                        >
+                                            {isSavingEmail ? <><Loader2 size={16} className="mr-2 animate-spin" />Saving...</> : "Save Config"}
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Test Email */}
+                            <Card className="bg-slate-800/50 border-slate-700">
+                                <CardHeader>
+                                    <CardTitle className="text-white text-base">Test Email</CardTitle>
+                                </CardHeader>
+                                <CardContent className="flex gap-3">
+                                    <Input value={testEmail} onChange={e => setTestEmail(e.target.value)}
+                                        type="email" placeholder="test@example.com"
+                                        className="bg-slate-700/50 border-slate-600 text-white flex-1" />
+                                    <Button
+                                        onClick={async () => {
+                                            setIsTestingEmail(true);
+                                            try {
+                                                const res = await fetch("/api/email/test", {
+                                                    method: "POST",
+                                                    headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({ email: testEmail }),
+                                                });
+                                                const data = await res.json();
+                                                if (data.success) toast.success("Test email sent!");
+                                                else toast.error(data.error || "Email not configured. Set SMTP credentials first.");
+                                            } finally { setIsTestingEmail(false); }
+                                        }}
+                                        disabled={isTestingEmail || !testEmail}
+                                        className="bg-green-600 hover:bg-green-700 shrink-0"
+                                    >
+                                        {isTestingEmail ? <Loader2 size={16} className="animate-spin" /> : "Send Test"}
+                                    </Button>
+                                </CardContent>
+                            </Card>
                         </div>
                     )}
                 </div>

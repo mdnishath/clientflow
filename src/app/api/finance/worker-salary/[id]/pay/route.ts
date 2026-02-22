@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { createNotification } from "@/lib/notifications";
+import { sendEmail, salaryPaidTemplate, isEmailConfigured } from "@/lib/email";
 import { NextRequest, NextResponse } from "next/server";
 
 interface RouteParams {
@@ -104,6 +105,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             type: "success",
             link: "/finance",
         });
+
+        // Send email notification to worker if email configured
+        if (isEmailConfigured() && existing.worker.email) {
+            const template = salaryPaidTemplate({
+                workerName: existing.worker.name || "Team Member",
+                amount: existing.amount,
+                currency: existing.currency,
+                period: existing.salaryType,
+                paymentMethod: paymentMethod || "Bank Transfer",
+                notes: notes,
+            });
+            sendEmail({ to: existing.worker.email, subject: template.subject, html: template.html })
+                .catch(err => logger.warn("Failed to send salary email", err, "finance"));
+        }
 
         logger.info(
             `Marked salary as paid for ${existing.worker.name}`,

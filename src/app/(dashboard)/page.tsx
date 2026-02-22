@@ -16,6 +16,9 @@ import { WorkerDashboard } from "@/components/dashboard/worker-dashboard";
 import { ClientDashboard } from "@/components/dashboard/client-dashboard";
 import { OnlineUsers } from "@/components/dashboard/online-users";
 import { OnlineUsersAdmin } from "@/components/admin/online-users-admin";
+import { WorkerMonitor } from "@/components/admin/worker-monitor";
+import { WorkerLeaderboard } from "@/components/admin/worker-leaderboard";
+import { AtRiskAlerts } from "@/components/dashboard/at-risk-alerts";
 import Link from "next/link";
 
 interface ReviewWithProfile {
@@ -230,6 +233,9 @@ export default async function DashboardPage() {
                 <DashboardHeaderActions />
             </div>
 
+            {/* Smart At-Risk Alerts */}
+            <AtRiskAlerts />
+
             {/* Enhanced Dashboard with Charts */}
             <EnhancedDashboard />
 
@@ -246,6 +252,12 @@ export default async function DashboardPage() {
                 issueReviews={data.issueReviews}
                 isClient={role === "CLIENT"}
             />
+
+            {/* Worker Monitor — stealth (admin only) */}
+            {role === "ADMIN" && <WorkerMonitor />}
+
+            {/* Worker Leaderboard (admin only) */}
+            {role === "ADMIN" && <WorkerLeaderboard />}
 
             {/* Online Users - Real-time for Admin, Personal for others */}
             {role === "ADMIN" ? (

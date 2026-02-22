@@ -40,6 +40,7 @@ export function useBatchCheck() {
   const { data: session } = useSession();
   const dispatch = useAppDispatch();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false); // true while validating with backend after refresh
   const [progress, setProgress] = useState<BatchProgress>({
     currentBatch: 0,
     totalBatches: 0,
@@ -60,6 +61,7 @@ export function useBatchCheck() {
   const isPausedRef = useRef(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const isProcessingRef = useRef(isProcessing);
+  const totalReviewsRef = useRef(0); // FIX: avoid stale closure in reconnectToSSE
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -91,13 +93,26 @@ export function useBatchCheck() {
           return;
         }
 
-        // If state claims to be processing, validate with backend
+        // If state claims to be processing, OPTIMISTICALLY show popup immediately,
+        // then validate with backend in background
         if (state.isProcessing) {
+          // ✅ INSTANT: Restore progress/stats from localStorage so popup shows right away
+          setIsRestoring(true);
+          setProgress(state.progress || {
+            currentBatch: 0, totalBatches: 0, currentBatchProgress: 0,
+            overallProgress: 0, processedReviews: 0, totalReviews: 0, status: 'running',
+          });
+          setStats(state.stats || { live: 0, missing: 0, error: 0, done: 0 });
+          if (state.progress?.totalReviews) {
+            totalReviewsRef.current = state.progress.totalReviews;
+          }
+
           try {
             const response = await fetch('/api/automation/status');
             if (!response.ok) {
               console.log('⚠️ Cannot validate state with backend, clearing');
               localStorage.removeItem(getBatchStateKey());
+              setIsRestoring(false);
               return;
             }
 
@@ -110,28 +125,30 @@ export function useBatchCheck() {
             if (backendIsIdle) {
               console.log('⚠️ State mismatch: frontend thinks running but backend is idle. Clearing state.');
               localStorage.removeItem(getBatchStateKey());
+              setIsRestoring(false);
+              setProgress(prev => ({ ...prev, status: 'idle' }));
               toast.info('Previous batch session has ended');
               return;
             }
 
-            // Backend confirms active session - safe to restore
+            // ✅ Backend confirms active session - switch from restoring to processing
             console.log('✅ Backend confirms active session, restoring state');
+            setIsRestoring(false);
             setIsProcessing(true);
-            setProgress(state.progress);
-            setStats(state.stats);
 
-            // FIX: Reconnect to SSE without starting new batch check
-            // The backend is already processing, we just need to listen for updates
+            // Reconnect to SSE for live updates
             reconnectToSSE();
+            toast.info('🔄 Reconnected — batch check still running');
           } catch (error) {
             console.error('Error validating state with backend:', error);
-            // If we can't reach backend, clear state to be safe
             localStorage.removeItem(getBatchStateKey());
+            setIsRestoring(false);
           }
         }
       } catch (error) {
         console.error('Error restoring batch state:', error);
         localStorage.removeItem(getBatchStateKey());
+        setIsRestoring(false);
       }
     };
 
@@ -183,6 +200,7 @@ export function useBatchCheck() {
     eventSource.addEventListener('result', (event) => {
       try {
         const data = JSON.parse(event.data);
+        const total = totalReviewsRef.current;
 
         // Update stats
         setStats(prev => {
@@ -193,12 +211,16 @@ export function useBatchCheck() {
           return newStats;
         });
 
-        // Update progress
-        setProgress(prev => ({
-          ...prev,
-          processedReviews: prev.processedReviews + 1,
-          overallProgress: Math.round(((prev.processedReviews + 1) / prev.totalReviews) * 100),
-        }));
+        // Update progress using ref (no stale closure)
+        setProgress(prev => {
+          const newProcessed = prev.processedReviews + 1;
+          const newOverall = total > 0 ? Math.round((newProcessed / total) * 100) : 0;
+          return {
+            ...prev,
+            processedReviews: newProcessed,
+            overallProgress: newOverall,
+          };
+        });
       } catch (error) {
         console.error('Error parsing SSE result:', error);
       }
@@ -207,11 +229,13 @@ export function useBatchCheck() {
     eventSource.addEventListener('stats', (event) => {
       try {
         const stats = JSON.parse(event.data);
+        const total = totalReviewsRef.current;
         // Backend sends unwrapped stats object directly
-        if (stats.completed >= progress.totalReviews || stats.pending + stats.processing === 0) {
+        if ((total > 0 && stats.completed >= total) || (stats.pending + stats.processing === 0 && stats.completed > 0)) {
           eventSource.close();
           setIsProcessing(false);
           clearBatchState();
+          toast.success('✅ Batch check completed!');
         }
       } catch (error) {
         console.error('Error parsing SSE stats:', error);
@@ -232,7 +256,7 @@ export function useBatchCheck() {
         }, 3000);
       }
     };
-  }, [progress.totalReviews, clearBatchState]);
+  }, [clearBatchState]); // FIX: removed progress.totalReviews dep (now uses totalReviewsRef)
 
   // Save state whenever it changes
   useEffect(() => {
@@ -261,6 +285,7 @@ export function useBatchCheck() {
       console.log(`📦 Starting serverside batch check: ${reviewIds.length} reviews with ${concurrency} threads`);
 
       // Initialize progress
+      totalReviewsRef.current = reviewIds.length; // FIX: set ref for reconnectToSSE
       setProgress({
         currentBatch: 0,
         totalBatches: 0,
@@ -770,6 +795,7 @@ export function useBatchCheck() {
     });
 
     setIsProcessing(false);
+    setIsRestoring(false);
     clearBatchState();
 
     toast.success('Progress cleared');
@@ -777,13 +803,14 @@ export function useBatchCheck() {
 
   return {
     isProcessing,
+    isRestoring, // true while validating backend after page refresh
     progress,
     stats,
     startBatchCheck,
     pause,
     resume,
     stop,
-    clear, // NEW: Expose clear function
+    clear,
   };
 }
 

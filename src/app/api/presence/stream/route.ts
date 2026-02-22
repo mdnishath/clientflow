@@ -62,6 +62,7 @@ export function broadcastPresenceUpdate(event: 'user_online' | 'user_offline' | 
     const allUsers = Array.from(onlineUsers.values());
 
     // Send filtered data to each admin
+    const deadConnections: string[] = [];
     for (const [adminId, conn] of connections.entries()) {
         try {
             // Filter users: admin themselves + their workers + their clients
@@ -81,8 +82,13 @@ export function broadcastPresenceUpdate(event: 'user_online' | 'user_offline' | 
 
             conn.controller.enqueue(`data: ${data}\n\n`);
         } catch (error) {
-            console.error("Failed to send SSE message:", error);
+            // Connection is dead, mark for removal
+            deadConnections.push(adminId);
         }
+    }
+    // Remove dead connections
+    for (const adminId of deadConnections) {
+        connections.delete(adminId);
     }
 }
 
@@ -194,9 +200,14 @@ export async function GET(req: NextRequest) {
             // Send heartbeat every 15 seconds to keep connection alive
             const heartbeat = setInterval(() => {
                 try {
+                    if (req.signal.aborted) {
+                        clearInterval(heartbeat);
+                        return;
+                    }
                     controller.enqueue(encoder.encode(`: heartbeat\n\n`));
                 } catch {
                     clearInterval(heartbeat);
+                    connections.delete(adminId);
                 }
             }, 15000);
 
@@ -204,6 +215,7 @@ export async function GET(req: NextRequest) {
             req.signal.addEventListener('abort', () => {
                 clearInterval(heartbeat);
                 connections.delete(adminId);
+                try { controller.close(); } catch { /* already closed */ }
             });
         },
     });

@@ -21,6 +21,9 @@ import {
     ChevronLeft,
     ChevronRight,
     Building2,
+    Share2,
+    Copy,
+    QrCode,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -77,6 +80,7 @@ interface Client {
     phone: string | null;
     notes: string | null;
     isArchived: boolean;
+    reportToken: string | null;
     _count: { gmbProfiles: number };
 }
 
@@ -107,6 +111,9 @@ export default function ClientDetailPage() {
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal] = useState(0);
+    const [reportUrl, setReportUrl] = useState<string | null>(null);
+    const [generatingReport, setGeneratingReport] = useState(false);
+    const [sendingReport, setSendingReport] = useState(false);
     const limit = 10;
 
     // Multi-select
@@ -129,6 +136,51 @@ export default function ClientDetailPage() {
             console.error("Failed to fetch client:", error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const generateReportLink = async () => {
+        setGeneratingReport(true);
+        try {
+            const res = await fetch(`/api/clients/${params.id}/report-token`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok) {
+                setReportUrl(data.url);
+                navigator.clipboard.writeText(data.url).catch(() => {});
+                toast.success("Report link copied to clipboard!");
+                if (client) setClient({ ...client, reportToken: data.token });
+            } else {
+                toast.error(data.error || "Failed to generate report link");
+            }
+        } catch {
+            toast.error("Failed to generate report link");
+        } finally {
+            setGeneratingReport(false);
+        }
+    };
+
+    const sendReportEmail = async () => {
+        if (!client?.email) {
+            toast.error("Client has no email address");
+            return;
+        }
+        setSendingReport(true);
+        try {
+            const res = await fetch("/api/email/send-report", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ clientId: params.id }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                toast.success(data.message || "Report sent!");
+            } else {
+                toast.error(data.error || "Failed to send report");
+            }
+        } catch {
+            toast.error("Failed to send report");
+        } finally {
+            setSendingReport(false);
         }
     };
 
@@ -394,14 +446,65 @@ export default function ClientDetailPage() {
                         )}
                     </div>
                 </div>
-                <Button
-                    variant="outline"
-                    onClick={() => setIsEditOpen(true)}
-                    className="border-slate-700 text-slate-300 hover:text-white"
-                >
-                    <Pencil size={16} className="mr-2" />
-                    Edit Client
-                </Button>
+                <div className="flex items-center gap-2">
+                    {/* Share Report Link + Send Report Email */}
+                    {can.manageClients && (
+                        <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-2">
+                                {/* Send Report by Email */}
+                                {client?.email && (
+                                    <Button
+                                        variant="outline"
+                                        onClick={sendReportEmail}
+                                        disabled={sendingReport}
+                                        className="border-cyan-600/50 text-cyan-400 hover:bg-cyan-600/10 hover:text-cyan-300"
+                                        title={`Send report PDF to ${client.email}`}
+                                    >
+                                        {sendingReport
+                                            ? <><Loader2 size={14} className="mr-2 animate-spin" />Sending...</>
+                                            : <><Mail size={14} className="mr-2" />Email Report</>
+                                        }
+                                    </Button>
+                                )}
+                                {/* Generate Shareable Link */}
+                                <Button
+                                    variant="outline"
+                                    onClick={generateReportLink}
+                                    disabled={generatingReport}
+                                    className="border-indigo-600/50 text-indigo-400 hover:bg-indigo-600/10 hover:text-indigo-300"
+                                >
+                                    {generatingReport
+                                        ? <><Loader2 size={14} className="mr-2 animate-spin" />Generating...</>
+                                        : <><Share2 size={14} className="mr-2" />{client?.reportToken ? "Regenerate Link" : "Share Link"}</>
+                                    }
+                                </Button>
+                            </div>
+                            {(reportUrl || client?.reportToken) && (
+                                <div className="flex items-center gap-1.5 text-xs text-slate-500 max-w-[280px]">
+                                    <span className="truncate">{reportUrl || `${window?.location?.origin}/report/${client?.reportToken}`}</span>
+                                    <button
+                                        onClick={() => {
+                                            const url = reportUrl || `${window.location.origin}/report/${client?.reportToken}`;
+                                            navigator.clipboard.writeText(url);
+                                            toast.success("Copied!");
+                                        }}
+                                        className="text-indigo-400 hover:text-indigo-300 shrink-0"
+                                    >
+                                        <Copy size={12} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    <Button
+                        variant="outline"
+                        onClick={() => setIsEditOpen(true)}
+                        className="border-slate-700 text-slate-300 hover:text-white"
+                    >
+                        <Pencil size={16} className="mr-2" />
+                        Edit Client
+                    </Button>
+                </div>
             </div>
 
             {/* Notes */}

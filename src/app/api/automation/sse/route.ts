@@ -16,8 +16,13 @@ export async function GET(request: NextRequest) {
     const customStream = new ReadableStream({
         start(controller) {
             const sendEvent = (event: string, data: any) => {
-                const text = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-                controller.enqueue(encoder.encode(text));
+                try {
+                    if (request.signal.aborted) return;
+                    const text = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+                    controller.enqueue(encoder.encode(text));
+                } catch {
+                    // Client disconnected, ignore
+                }
             };
 
             sendEvent("connected", { message: "SSE Connected" });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { fireConfetti } from "@/components/ui/confetti";
 import { useSearchParams } from "next/navigation";
 import { format } from "date-fns";
 import { useDebounce } from "use-debounce";
@@ -26,6 +27,7 @@ import {
     Pencil,
     Package,
     StopCircle,
+    Timer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -215,6 +217,7 @@ export default function CheckerPage() {
     // UNIFIED: Use only batch check for ALL checks (small or large)
     const {
         isProcessing: isChecking,
+        isRestoring: isReconnecting,
         progress: batchProgress,
         stats: batchStats,
         startBatchCheck,
@@ -444,8 +447,16 @@ export default function CheckerPage() {
 
         await startBatchCheck(selectedIds, {
             concurrency: threadCount as 3 | 5 | 10,
-            onComplete: () => {
+            onComplete: (finalStats) => {
                 fetchReviewsData();
+                if (finalStats && finalStats.live > 0) {
+                    const allLive = finalStats.live === selectedIds.length;
+                    fireConfetti(allLive ? "fireworks" : "success");
+                    toast.success(allLive
+                        ? `🎉 All ${finalStats.live} reviews are LIVE!`
+                        : `✅ Done! ${finalStats.live} live, ${finalStats.missing} missing`
+                    );
+                }
             },
         });
     };
@@ -465,8 +476,12 @@ export default function CheckerPage() {
 
         await startBatchCheck(allIds, {
             concurrency: threadCount as 3 | 5 | 10,
-            onComplete: () => {
+            onComplete: (finalStats) => {
                 fetchReviewsData();
+                if (finalStats && finalStats.live > 0) {
+                    const allLive = finalStats.live === allIds.length;
+                    fireConfetti(allLive ? "fireworks" : "success");
+                }
             },
         });
     };
@@ -530,6 +545,24 @@ export default function CheckerPage() {
                             <Activity size={16} className="mr-2" />
                         )}
                         Check All
+                    </Button>
+                    {/* Auto-Check trigger */}
+                    <Button
+                        onClick={async () => {
+                            try {
+                                const res = await fetch("/api/admin/schedule", { method: "PUT" });
+                                const data = await res.json();
+                                if (res.ok) toast.success(data.message || "Auto-check started!");
+                                else toast.error(data.error || "Failed to start auto-check");
+                            } catch { toast.error("Failed to start auto-check"); }
+                        }}
+                        disabled={isChecking}
+                        variant="outline"
+                        className="border-green-600/50 text-green-400 hover:bg-green-500/10"
+                        title="Auto-check all checkable reviews"
+                    >
+                        <Timer size={16} className="mr-2" />
+                        Auto-Run
                     </Button>
                 </div>
             </div>
@@ -732,36 +765,32 @@ export default function CheckerPage() {
                 </div>
             )}
 
-            {/* Select All Header - Hidden during checking */}
-            {!isChecking && (
-                <div className="flex items-center gap-3 mb-3 px-1">
+            {/* Select All Header */}
+            <div className="flex items-center gap-3 mb-3 px-1">
+                {isChecking ? (
+                    <div className="flex items-center gap-2">
+                        <Loader2 size={14} className="animate-spin text-indigo-400" />
+                        <span className="text-sm text-indigo-300 font-medium">Batch check running...</span>
+                    </div>
+                ) : (
                     <Checkbox
                         checked={allDisplayedSelected}
                         onCheckedChange={selectAllDisplayed}
                         className="border-slate-500"
                     />
+                )}
+                {!isChecking && (
                     <span className="text-sm text-slate-400">
                         {allDisplayedSelected ? "Deselect all displayed" : "Select all displayed"}
                     </span>
-                    <span className="text-sm text-slate-500 ml-auto">
-                        Showing {displayedReviews.length} of {allFilteredReviews.length} reviews
-                    </span>
-                </div>
-            )}
+                )}
+                <span className="text-sm text-slate-500 ml-auto">
+                    Showing {displayedReviews.length} of {allFilteredReviews.length} reviews
+                </span>
+            </div>
 
             {/* Reviews List - INFINITE SCROLL */}
-            {/* OPTIMIZATION: Hide review list during checking to save RAM */}
-            {isChecking ? (
-                <Card className="bg-slate-800/30 border-slate-700">
-                    <CardContent className="py-12 text-center">
-                        <Package className="mx-auto h-10 w-10 text-emerald-400 mb-3 animate-pulse" />
-                        <p className="text-slate-300 font-medium mb-2">Batch Processing in Progress</p>
-                        <p className="text-slate-500 text-sm">
-                            Review list is hidden to save memory. Check the batch progress popup for details.
-                        </p>
-                    </CardContent>
-                </Card>
-            ) : isLoading ? (
+            {isLoading ? (
                 <div className="text-center py-12 text-slate-500">
                     <Loader2 className="mx-auto h-8 w-8 animate-spin mb-3" />
                     Loading reviews...
@@ -979,21 +1008,37 @@ export default function CheckerPage() {
                 </InfiniteScroll>
             )}
 
-            {/* UNIFIED POPUP: Single popup for ALL checks (small or large) */}
-            {/* Serverside managed, refresh-proof */}
-
-            {isChecking && (
-                <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-4 w-96">
+            {/* UNIFIED POPUP: Persistent — shows on refresh too */}
+            {(isChecking || isReconnecting) && (
+                <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-indigo-500/30 rounded-xl shadow-2xl p-4 w-96">
                     <div className="space-y-3">
+                        {/* Header */}
                         <div className="flex items-center justify-between">
                             <h3 className="font-semibold text-white flex items-center gap-2">
                                 <Loader2 className="animate-spin text-indigo-400" size={16} />
-                                Live Checking
+                                {isReconnecting ? (
+                                    <span className="text-indigo-300">Reconnecting...</span>
+                                ) : (
+                                    <span>Live Checking</span>
+                                )}
                             </h3>
-                            <span className="text-xs text-slate-400">
-                                {batchProgress.totalReviews} reviews
-                            </span>
+                            <div className="flex items-center gap-2">
+                                {isReconnecting && (
+                                    <span className="text-xs text-indigo-400 animate-pulse">Verifying session</span>
+                                )}
+                                {batchProgress.totalReviews > 0 && (
+                                    <span className="text-xs text-slate-400">{batchProgress.totalReviews} reviews</span>
+                                )}
+                            </div>
                         </div>
+
+                        {/* Reconnecting Banner */}
+                        {isReconnecting && (
+                            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-3 py-2 text-xs text-indigo-300 flex items-center gap-2">
+                                <Activity size={12} className="animate-pulse shrink-0" />
+                                Page refreshed — re-connecting to background session...
+                            </div>
+                        )}
 
                         {/* Overall Progress */}
                         <div>
@@ -1003,31 +1048,31 @@ export default function CheckerPage() {
                             </div>
                             <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                                 <div
-                                    className="h-full bg-indigo-500 transition-all duration-300"
-                                    style={{ width: `${batchProgress.overallProgress}%` }}
+                                    className={`h-full transition-all duration-500 ${isReconnecting ? "bg-indigo-500/50 animate-pulse" : "bg-indigo-500"}`}
+                                    style={{ width: `${Math.max(batchProgress.overallProgress, isReconnecting ? 5 : 0)}%` }}
                                 />
                             </div>
                             <div className="text-xs text-slate-500 mt-1">
-                                {batchProgress.processedReviews} / {batchProgress.totalReviews} reviews
+                                {batchProgress.processedReviews} / {batchProgress.totalReviews || "?"} reviews
                             </div>
                         </div>
 
                         {/* Stats */}
                         <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-700">
                             <div className="text-center">
-                                <div className="text-lg font-bold text-cyan-400">{batchStats.done || 0}</div>
+                                <div className={`text-lg font-bold text-cyan-400 ${isReconnecting ? "opacity-50" : ""}`}>{batchStats.done || 0}</div>
                                 <div className="text-xs text-slate-400">Done</div>
                             </div>
                             <div className="text-center">
-                                <div className="text-lg font-bold text-emerald-400">{batchStats.live}</div>
+                                <div className={`text-lg font-bold text-emerald-400 ${isReconnecting ? "opacity-50" : ""}`}>{batchStats.live}</div>
                                 <div className="text-xs text-slate-400">Live</div>
                             </div>
                             <div className="text-center">
-                                <div className="text-lg font-bold text-red-400">{batchStats.missing}</div>
+                                <div className={`text-lg font-bold text-red-400 ${isReconnecting ? "opacity-50" : ""}`}>{batchStats.missing}</div>
                                 <div className="text-xs text-slate-400">Missing</div>
                             </div>
                             <div className="text-center">
-                                <div className="text-lg font-bold text-orange-400">{batchStats.error}</div>
+                                <div className={`text-lg font-bold text-orange-400 ${isReconnecting ? "opacity-50" : ""}`}>{batchStats.error}</div>
                                 <div className="text-xs text-slate-400">Errors</div>
                             </div>
                         </div>
@@ -1038,7 +1083,8 @@ export default function CheckerPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={handleStop}
-                                className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10"
+                                disabled={isReconnecting}
+                                className="flex-1 border-red-500/50 text-red-400 hover:bg-red-500/10 disabled:opacity-40"
                             >
                                 <StopCircle size={14} className="mr-2" />
                                 Stop

@@ -6,7 +6,8 @@ import {
     RotateCcw,
     Trash2,
     Star,
-    Store
+    Store,
+    QrCode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +46,7 @@ interface ProfileCardProps {
     onArchive?: (profile: Profile) => void;
     onRestore?: (profile: Profile) => void;
     onDelete?: (profile: Profile) => void;
+    onQR?: (profile: Profile) => void;
     isAdmin?: boolean;
 }
 
@@ -56,6 +58,7 @@ export function ProfileCard({
     onArchive,
     onRestore,
     onDelete,
+    onQR,
     isAdmin = false,
 }: ProfileCardProps) {
     const reviewCount = profile.reviewCount ?? profile._count?.reviews ?? 0;
@@ -123,17 +126,29 @@ export function ProfileCard({
                                 </div>
                             </div>
 
-                            {profile.gmbLink && (
-                                <a
-                                    href={profile.gmbLink}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-slate-500 hover:text-indigo-400 transition-colors shrink-0"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <ExternalLink size={16} />
-                                </a>
-                            )}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                                {onQR && profile.gmbLink && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onQR(profile); }}
+                                        className="text-slate-500 hover:text-purple-400 transition-colors"
+                                        title="Generate QR Code"
+                                    >
+                                        <QrCode size={15} />
+                                    </button>
+                                )}
+                                {profile.gmbLink && (
+                                    <a
+                                        href={profile.gmbLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-slate-500 hover:text-indigo-400 transition-colors"
+                                        onClick={(e) => e.stopPropagation()}
+                                        title="Open GMB Link"
+                                    >
+                                        <ExternalLink size={15} />
+                                    </a>
+                                )}
+                            </div>
                         </div>
 
                         <div className="mt-4 flex items-center justify-between text-sm">

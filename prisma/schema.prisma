@@ -74,6 +74,7 @@ model User {
   // Finance relations
   workerSalaries WorkerSalary[] @relation("WorkerSalaries")
   payments       Payment[]      @relation("WorkerPayments")
+  auditLogs      AuditLog[]     @relation("UserAuditLogs")
 
   // Worker permissions (only applies to WORKER role)
   canCreateReviews  Boolean @default(true) @map("can_create_reviews")
@@ -97,6 +98,9 @@ model Client {
   isArchived Boolean  @default(false) @map("is_archived")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Shareable report
+  reportToken String? @unique @map("report_token") // Public token for shareable report
 
   // Permissions
   canCreateProfiles Boolean @default(false) @map("can_create_profiles")
@@ -538,4 +542,28 @@ model Payment {
   @@index([paymentDate])
   @@index([paymentType])
   @@map("payments")
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: Cascade)
+
+  action    String   // CREATE, UPDATE, DELETE, LOGIN, LOGOUT, EXPORT, etc
+  entity    String   // review, profile, client, worker, invoice, etc
+  entityId  String?  @map("entity_id")
+  detail    String?  @db.Text // Human-readable description
+  metadata  Json?    // Extra data (old/new values, etc)
+  ipAddress String?  @map("ip_address")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([entity])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

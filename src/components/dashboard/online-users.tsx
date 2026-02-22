@@ -31,6 +31,11 @@ export function OnlineUsers() {
                 try {
                     await fetch("/api/presence/heartbeat", {
                         method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            page: window.location.pathname,
+                            title: document.title.replace(" - ClientFlow", "").trim(),
+                        }),
                     });
                     setIsOnline(true);
                 } catch (error) {

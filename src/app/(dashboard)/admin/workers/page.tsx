@@ -224,7 +224,24 @@ export default function WorkersPage() {
             });
 
             if (res.ok) {
+                const data = await res.json();
                 toast.success("Worker created successfully!");
+
+                // Try to send welcome email (non-blocking)
+                if (data.worker?.id) {
+                    fetch("/api/email/send-welcome", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            userId: data.worker.id,
+                            type: "worker",
+                            tempPassword: newWorkerPassword,
+                        }),
+                    }).then(r => r.json()).then(d => {
+                        if (d.success) toast.info("📧 Welcome email sent to worker!");
+                    }).catch(() => { /* email optional */ });
+                }
+
                 setIsCreateOpen(false);
                 setNewWorkerEmail("");
                 setNewWorkerPassword("");

@@ -493,19 +493,26 @@ class AutomationService {
         }
         // For ERROR status, we don't change the main status, only checkStatus
 
-        // Only update updatedAt timestamp if status actually changed
         if (statusChanged) {
-          updateData.updatedAt = new Date();
-          console.log(`   📅 Status changed - updating timestamp`);
+          console.log(`   📅 Status changed - updating with new timestamp`);
+          // Status changed: use normal Prisma update (updatedAt will auto-update via @updatedAt)
+          await tx.review.update({
+            where: { id: result.reviewId },
+            data: updateData,
+          });
         } else {
-          console.log(`   ⏸️ Status unchanged - no timestamp update`);
+          console.log(`   ⏸️ Status unchanged - preserving original updatedAt`);
+          // Status NOT changed: use raw SQL to bypass Prisma's @updatedAt auto-update
+          // This prevents unnecessary updatedAt changes and keeps Recent Activity clean
+          await tx.$executeRaw`
+            UPDATE reviews
+            SET
+              last_checked_at = ${result.checkedAt},
+              check_status = ${result.status},
+              screenshot_path = ${result.screenshotPath || null}
+            WHERE id = ${result.reviewId}
+          `;
         }
-
-        // Update within transaction
-        await tx.review.update({
-          where: { id: result.reviewId },
-          data: updateData,
-        });
 
         // Track DONE count - check if final status is DONE
         const finalStatus = updateData.status || currentStatus;

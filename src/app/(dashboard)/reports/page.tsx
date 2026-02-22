@@ -26,6 +26,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import { ProfileProgressReport } from "@/components/reports/profile-progress-report";
+import { WorkerLeaderboard } from "@/components/admin/worker-leaderboard";
 
 // Report Card Component for isolated reports
 interface ReportCardProps {
@@ -300,21 +301,42 @@ export default function ReportsPage() {
                             Comprehensive insights and performance metrics
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 rounded-lg p-2">
-                            <Calendar size={16} className="text-slate-400" />
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {/* Quick date shortcuts */}
+                        {[
+                            { label: "7d", days: 7 },
+                            { label: "30d", days: 30 },
+                            { label: "90d", days: 90 },
+                        ].map(({ label, days }) => {
+                            const from = new Date();
+                            from.setDate(from.getDate() - days);
+                            const fromStr = from.toISOString().split("T")[0];
+                            const toStr = new Date().toISOString().split("T")[0];
+                            const isActive = dateRange.from === fromStr && dateRange.to === toStr;
+                            return (
+                                <button
+                                    key={label}
+                                    onClick={() => setDateRange({ from: fromStr, to: toStr })}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isActive ? "bg-indigo-600 text-white" : "bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:border-slate-600"}`}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
+                        <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-1.5">
+                            <Calendar size={14} className="text-slate-400" />
                             <Input
                                 type="date"
                                 value={dateRange.from}
                                 onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
-                                className="bg-transparent border-0 text-sm w-32 text-white"
+                                className="bg-transparent border-0 text-xs w-28 text-white p-0 h-auto"
                             />
-                            <span className="text-slate-500">to</span>
+                            <span className="text-slate-500 text-xs">→</span>
                             <Input
                                 type="date"
                                 value={dateRange.to}
                                 onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
-                                className="bg-transparent border-0 text-sm w-32 text-white"
+                                className="bg-transparent border-0 text-xs w-28 text-white p-0 h-auto"
                             />
                         </div>
                     </div>
@@ -339,6 +361,10 @@ export default function ReportsPage() {
                     <TabsTrigger value="profiles" className="data-[state=active]:bg-indigo-600">
                         <PieChart size={16} className="mr-2" />
                         Profiles
+                    </TabsTrigger>
+                    <TabsTrigger value="leaderboard" className="data-[state=active]:bg-indigo-600">
+                        <Activity size={16} className="mr-2" />
+                        Leaderboard
                     </TabsTrigger>
                 </TabsList>
 
@@ -518,6 +544,11 @@ export default function ReportsPage() {
                     >
                         <ProfileProgressReport />
                     </ReportCard>
+                </TabsContent>
+
+                {/* Leaderboard Tab */}
+                <TabsContent value="leaderboard" className="mt-6">
+                    <WorkerLeaderboard />
                 </TabsContent>
             </Tabs>
         </div>
